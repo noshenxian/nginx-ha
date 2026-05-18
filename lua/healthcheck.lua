@@ -159,7 +159,109 @@ local function resolve_host(host)
     return nil
 end
 
+-- TCP 健康检查：仅验证端口可达
+local function check_tcp(upstream)
+    local address = resolve_host(upstream.host)
+    if not address then
+        return false
+    end
+
+    local timeout_ms = parse_duration(getenv("HEALTH_CHECK_TIMEOUT", "2s"), 2) * 1000
+    local sock = ngx.socket.tcp()
+    sock:settimeout(timeout_ms)
+    local ok, err = sock:connect(address, upstream.port)
+    if ok then
+        sock:close()
+        return true
+    end
+    return false
+end
+
+-- gRPC 健康检查：发送 gRPC Health/Check 协议请求
+-- 格式：1 byte 压缩标志(0) + 4 bytes big-endian 长度(0) = 空请求
+local function check_grpc(upstream)
+    local address = resolve_host(upstream.host)
+    if not address then
+        return false
+    end
+
+    local timeout_ms = parse_duration(getenv("HEALTH_CHECK_TIMEOUT", "2s"), 2) * 1000
+    local path = getenv("HEALTH_CHECK_PATH", "/grpc.health.v1.Health/Check")
+    local host_header = getenv("HEALTH_CHECK_HOST_HEADER", upstream.host)
+
+    local sock = ngx.socket.tcp()
+    sock:settimeout(timeout_ms)
+
+    local ok, err = sock:connect(address, upstream.port)
+    if not ok then
+        return false
+    end
+
+    -- gRPC 请求：content-type: application/grpc，body 为 5 字节（flag=0 + len=0）
+    local req = {
+        "POST " .. path .. " HTTP/1.1\r\n",
+        "Host: " .. host_header .. "\r\n",
+        "Content-Type: application/grpc\r\n",
+        "Connection: close\r\n",
+        "Content-Length: 5\r\n",
+        "\r\n",
+        "\0\0\0\0\0",  -- flag(1 byte) + 4 bytes big-endian length = 0
+    }
+    local send_ok = sock:send(req)
+    if not send_ok then
+        sock:close()
+        return false
+    end
+
+    -- 读响应状态行
+    local status_line = sock:receive("*l")
+    if not status_line then
+        sock:close()
+        return false
+    end
+
+    local http_version, status_code_str = status_line:match("^HTTP/(%d%.%d)%s+(%d+)")
+    if not http_version or not status_code_str then
+        sock:close()
+        return false
+    end
+    local status_code = tonumber(status_code_str)
+    -- gRPC 健康检查返回 200 且 grpc-status: 0 表示 SERVING
+    if status_code ~= 200 then
+        sock:close()
+        return false
+    end
+
+    -- 读 headers 找 grpc-status
+    local grpc_status = -1
+    while true do
+        local line = sock:receive("*l")
+        if not line or line == "\r" or line == "" then break end
+        local k, v = line:match("^([^:]+):%s*(.+)")
+        if k and v then
+            k = k:lower()
+            if k == "grpc-status" then
+                grpc_status = tonumber(v) or -1
+            end
+        end
+    end
+
+    sock:close()
+    return grpc_status == 0
+end
+
 local function check_one(upstream, match_cfg)
+    local check_type = getenv("HEALTH_CHECK_TYPE", "http")
+
+    if check_type == "tcp" then
+        return check_tcp(upstream)
+    end
+
+    if check_type == "grpc" then
+        return check_grpc(upstream)
+    end
+
+    -- HTTP 默认
     local address = resolve_host(upstream.host)
     if not address then
         return false

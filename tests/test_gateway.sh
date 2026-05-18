@@ -13,12 +13,13 @@ NGINX_BIN="${NGINX_BIN:-/opt/openresty/nginx/sbin/nginx}"
 ADMIN_PID=
 SC_PID=
 REDIS_BE_PID=
+TCP_PID=
 
 mkdir -p "$TMP_DIR"
 
 cleanup() {
   "$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
-  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" "$REDIS_BE_PID" 2>/dev/null || true
+  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" "$REDIS_BE_PID" "$TCP_PID" 2>/dev/null || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -344,7 +345,8 @@ redis_port=$((GATEWAY_PORT + 50))
 PORT="$redis_port" BACKEND_ID="redis-backend" \
   STICKY_COOKIE="JSESSIONID=redis123; Path=/" \
   python3 "$ROOT/tests/fixtures/backend.py" &
-REDIS_BE_PID=$!
+REDIS_BE_PID=
+TCP_PID=$!
 wait_for_http "http://127.0.0.1:$redis_port/healthz"
 
 # 重启带 Redis 的网关
@@ -366,6 +368,39 @@ sess_key=$(redis-cli -a 'Scanner@2026' --no-auth-warning keys "nginx-ha:sess:*" 
 
 # 清理
 redis-cli -a 'Scanner@2026' --no-auth-warning del "$sess_key" >/dev/null 2>&1 || true
-kill "$REDIS_BE_PID" >/dev/null 2>&1 || true
+kill "$REDIS_BE_PID" "$TCP_PID" >/dev/null 2>&1 || true
 
 echo "redis sync tests passed"
+
+# ---- TCP 健康检查验证 ----
+TCP_ENV="$TMP_DIR/tcp.env"
+tcp_port=$((GATEWAY_PORT + 60))
+{
+  echo "BACKEND_UPSTREAMS=127.0.0.1:$tcp_port:1"
+  echo "GATEWAY_BIND=127.0.0.1:$GATEWAY_PORT"
+  echo "API_GATEWAY_SECRET=$SECRET"
+  echo "HEALTH_CHECK_TYPE=tcp"
+  echo "HEALTH_CHECK_INTERVAL=1s"
+  echo "HEALTH_CHECK_FAILS=1"
+  echo "HEALTH_CHECK_PASSES=1"
+} > "$TCP_ENV"
+
+PORT="$tcp_port" BACKEND_ID="tcp-backend" \
+  python3 "$ROOT/tests/fixtures/backend.py" &
+TCP_PID=$!
+wait_for_http "http://127.0.0.1:$tcp_port/healthz"
+
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
+wait_for_port_free "$GATEWAY_PORT"
+ENV_FILE="$TCP_ENV" sh "$ROOT/scripts/render_config.sh"
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf"
+wait_for_http "http://127.0.0.1:$GATEWAY_PORT/healthz"
+sleep 2
+
+tcp_status=$(curl -sS -H "X-API-Gateway-Secret: $SECRET" "http://127.0.0.1:$GATEWAY_PORT/status")
+echo "$tcp_status" | grep -q '"health":"healthy"' || \
+  fail "tcp health check: expected healthy, got: $tcp_status"
+
+kill "$TCP_PID" >/dev/null 2>&1 || true
+
+echo "tcp health check tests passed"
