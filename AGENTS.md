@@ -188,4 +188,3 @@ README 至少包含：
 - [ ] **限流集成**：`access_by_lua` 加 `lua-resty-limit-conn` / `lua-resty-limit-req`，配合 KeyVal 动态更新白名单/黑名单/限速额度
 - [ ] **可观测性增强**：`$upstream_last_addr` 等效变量记入 access log；`/metrics` 加 p50/p90/p99 latency；健康状态变更事件结构化日志
 - [ ] **CI + 压测**：GitHub Actions 跑 `render + validate + test_gateway.sh`；`wrk`/`vegeta` 压测脚本验证 least_conn / max_conns / slow_start
-- [ ] **管理 UI**：静态 HTML 页面挂到 `/admin`，展示上游健康状态、请求量、in-flight、支持增删改 upstream 和权重调整
