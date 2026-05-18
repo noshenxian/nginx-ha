@@ -1,0 +1,18 @@
+return {
+  BACKEND_UPSTREAMS = "10.0.0.11:8080:1,10.0.0.12:8080:1",
+  BACKEND_UPSTREAM = "",
+  LB_STRATEGY = "round_robin",
+  SESSION_STICKY = "true",
+  SESSION_STICKY_MODE = "cookie",
+  SESSION_COOKIE_NAME = "OPENRESTY_LB_ROUTE",
+  SESSION_HEADER_NAME = "X-Session-ID",
+  SESSION_TTL = "3600s",
+  HEALTH_CHECK_ENABLED = "true",
+  HEALTH_CHECK_INTERVAL = "5s",
+  HEALTH_CHECK_PATH = "/healthz",
+  HEALTH_CHECK_TIMEOUT = "2s",
+  HEALTH_CHECK_FAILS = "3",
+  HEALTH_CHECK_PASSES = "2",
+  API_GATEWAY_SECRET = "replace-with-a-strong-secret",
+  DNS_RESOLVER = "127.0.0.11 ipv6=off valid=10s",
+}

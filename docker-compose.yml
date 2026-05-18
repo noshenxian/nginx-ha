@@ -1,0 +1,30 @@
+services:
+  gateway:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "${PUBLISHED_GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      - backend-a
+      - backend-b
+
+  backend-a:
+    image: python:3.12-alpine
+    working_dir: /app
+    volumes:
+      - ./tests/fixtures:/app:ro
+    environment:
+      PORT: "${BACKEND_FIXTURE_PORT:-8080}"
+      BACKEND_ID: "${BACKEND_A_ID:-backend-a}"
+    command: ["python", "backend.py"]
+
+  backend-b:
+    image: python:3.12-alpine
+    working_dir: /app
+    volumes:
+      - ./tests/fixtures:/app:ro
+    environment:
+      PORT: "${BACKEND_FIXTURE_PORT:-8080}"
+      BACKEND_ID: "${BACKEND_B_ID:-backend-b}"
+    command: ["python", "backend.py"]
