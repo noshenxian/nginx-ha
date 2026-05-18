@@ -121,6 +121,33 @@ local function prometheus_metrics()
         lines[#lines + 1] = 'upstream_request_duration_seconds_sum{upstream="' .. id .. '"} '
             .. string.format("%.6f", ns:get("hist_sum:" .. id) or 0)
         lines[#lines + 1] = 'upstream_request_duration_seconds_count{upstream="' .. id .. '"} ' .. req_count
+
+        -- 近似百分位（从 histogram 桶估算）
+        if req_count > 0 then
+            local function approx_percentile(pct)
+                local target = req_count * pct
+                local cumulative = 0
+                local prev_bucket = 0
+                for _, bucket in ipairs(duration_buckets) do
+                    local count = ns:get(hist_key .. bucket) or 0
+                    cumulative = cumulative + count
+                    if cumulative >= target then
+                        -- 线性插值
+                        local frac = (target - (cumulative - count)) / math.max(count, 1)
+                        return prev_bucket + (bucket - prev_bucket) * frac
+                    end
+                    prev_bucket = bucket
+                end
+                return prev_bucket
+            end
+
+            lines[#lines + 1] = 'upstream_request_duration_seconds{upstream="' .. id .. '",quantile="0.5"} '
+                .. string.format("%.6f", approx_percentile(0.5))
+            lines[#lines + 1] = 'upstream_request_duration_seconds{upstream="' .. id .. '",quantile="0.9"} '
+                .. string.format("%.6f", approx_percentile(0.9))
+            lines[#lines + 1] = 'upstream_request_duration_seconds{upstream="' .. id .. '",quantile="0.99"} '
+                .. string.format("%.6f", approx_percentile(0.99))
+        end
     end
 
     ngx.header["Content-Type"] = "text/plain; version=0.0.4; charset=utf-8"

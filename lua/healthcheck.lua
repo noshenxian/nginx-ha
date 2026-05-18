@@ -416,7 +416,10 @@ local function mark(upstream, ok)
         dict:incr(key("pass", upstream), 1, 0)
         dict:set(key("fail", upstream), 0)
         if (dict:get(key("pass", upstream)) or 0) >= passes then
-            -- 记录恢复时间戳（slow_start 用）
+            local prev = dict:get(health_key_name)
+            if prev == "unhealthy" then
+                ngx.log(ngx.WARN, '{"event":"upstream_recovered","upstream":"', upstream.id, '","previous":"', prev, '"}')
+            end
             dict:set(key("recovered_at", upstream), ngx.now())
             dict:set(health_key_name, "healthy")
         end
@@ -424,6 +427,10 @@ local function mark(upstream, ok)
         dict:incr(key("fail", upstream), 1, 0)
         dict:set(key("pass", upstream), 0)
         if (dict:get(key("fail", upstream)) or 0) >= fails then
+            local prev = dict:get(health_key_name)
+            if prev ~= "unhealthy" then
+                ngx.log(ngx.WARN, '{"event":"upstream_unhealthy","upstream":"', upstream.id, '","previous":"', tostring(prev), '"}')
+            end
             dict:set(health_key_name, "unhealthy")
             dict:set(key("recovered_at", upstream), 0)
         end
