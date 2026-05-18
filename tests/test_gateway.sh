@@ -12,12 +12,13 @@ BACKEND2_DOWN="$TMP_DIR/backend2.down"
 NGINX_BIN="${NGINX_BIN:-/opt/openresty/nginx/sbin/nginx}"
 ADMIN_PID=
 SC_PID=
+REDIS_BE_PID=
 
 mkdir -p "$TMP_DIR"
 
 cleanup() {
   "$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
-  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" 2>/dev/null || true
+  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" "$REDIS_BE_PID" 2>/dev/null || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -318,3 +319,53 @@ kv_del=$(curl -sS -X DELETE -H "X-API-Gateway-Secret: $SECRET" \
 echo "$kv_del" | grep -q '"message":"deleted"' || fail "keyval: failed to delete key"
 
 echo "keyval tests passed"
+
+# ---- Redis 跨节点同步验证 ----
+REDIS_ENV="$TMP_DIR/redis.env"
+redis_port=$((GATEWAY_PORT + 50))
+{
+  echo "BACKEND_UPSTREAMS=127.0.0.1:$redis_port:1"
+  echo "GATEWAY_BIND=127.0.0.1:$GATEWAY_PORT"
+  echo "API_GATEWAY_SECRET=$SECRET"
+  echo "REDIS_ENABLED=true"
+  echo "REDIS_HOST=127.0.0.1"
+  echo "REDIS_PORT=6379"
+  echo "REDIS_PASSWORD=Scanner@2026"
+  echo "REDIS_DB=0"
+  echo "STICKY_LEARN_ENABLED=true"
+  echo "STICKY_LEARN_COOKIES=JSESSIONID"
+  echo "STICKY_LEARN_TTL=60"
+  echo "HEALTH_CHECK_INTERVAL=1s"
+  echo "HEALTH_CHECK_FAILS=1"
+  echo "HEALTH_CHECK_PASSES=1"
+} > "$REDIS_ENV"
+
+# 启动带 JSESSIONID cookie 的后端
+PORT="$redis_port" BACKEND_ID="redis-backend" \
+  STICKY_COOKIE="JSESSIONID=redis123; Path=/" \
+  python3 "$ROOT/tests/fixtures/backend.py" &
+REDIS_BE_PID=$!
+wait_for_http "http://127.0.0.1:$redis_port/healthz"
+
+# 重启带 Redis 的网关
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
+wait_for_port_free "$GATEWAY_PORT"
+ENV_FILE="$REDIS_ENV" sh "$ROOT/scripts/render_config.sh"
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf"
+wait_for_http "http://127.0.0.1:$GATEWAY_PORT/healthz"
+sleep 2
+
+# 第一个请求：后端返回 JSESSIONID=redis123，网关学习并写入 Redis L2
+learn_req=$(curl -sS "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+echo "$learn_req" | grep -q '"backend"[ :]*"redis-backend"' || \
+  fail "redis: first request should reach redis-backend, got: $learn_req"
+
+# 验证 Redis 中有 session 数据
+sess_key=$(redis-cli -a 'Scanner@2026' --no-auth-warning keys "nginx-ha:sess:*" 2>/dev/null | head -1)
+[ -n "$sess_key" ] || fail "redis: no session key found in Redis"
+
+# 清理
+redis-cli -a 'Scanner@2026' --no-auth-warning del "$sess_key" >/dev/null 2>&1 || true
+kill "$REDIS_BE_PID" >/dev/null 2>&1 || true
+
+echo "redis sync tests passed"

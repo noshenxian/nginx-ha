@@ -1,6 +1,7 @@
 local _M = {}
 local runtime_config = require("runtime_config")
 local state = require("state")
+local redis_sync = require("redis_sync")
 
 -- 用 upstream_health 存动态成员（前缀 dyn:），避免 ngx.shared 访问问题
 local DICT_NAME = "upstream_health"
@@ -168,7 +169,7 @@ function _M.serve()
                 return send_json(500, {error = "failed to store: " .. (err2 or "unknown")})
             end
 
-            state.save()
+            state.save(); redis_sync.publish("upstreams", "changed"); redis_sync.set("upstreams:version", tostring(ngx.now()), 0)
             return send_json(201, {message = "member added", member = member})
         end
 
@@ -197,7 +198,7 @@ function _M.serve()
                 return send_json(404, {error = "member not found"})
             end
             dict:delete(key)
-            state.save()
+            state.save(); redis_sync.publish("upstreams", "changed"); redis_sync.set("upstreams:version", tostring(ngx.now()), 0)
             return send_json(200, {message = "member deleted", id = member_id})
 
         elseif method == "PATCH" then
@@ -228,7 +229,7 @@ function _M.serve()
             if not ok4 then
                 return send_json(500, {error = "failed to update: " .. (err4 or "unknown")})
             end
-            state.save()
+            state.save(); redis_sync.publish("upstreams", "changed"); redis_sync.set("upstreams:version", tostring(ngx.now()), 0)
             return send_json(200, {message = "member updated", member = member})
         end
 

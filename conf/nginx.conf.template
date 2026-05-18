@@ -26,6 +26,15 @@ env HEALTH_CHECK_BODY_MATCH_NEGATE;
 env HEALTH_CHECK_HEADER_NAME;
 env HEALTH_CHECK_HEADER_MATCH;
 env HEALTH_CHECK_MANDATORY;
+env STICKY_LEARN_ENABLED;
+env STICKY_LEARN_COOKIES;
+env STICKY_LEARN_TTL;
+env REDIS_ENABLED;
+env REDIS_HOST;
+env REDIS_PORT;
+env REDIS_PASSWORD;
+env REDIS_DB;
+env UPSTREAM_MAX_CONNS;
 env API_GATEWAY_SECRET;
 
 events {
@@ -155,7 +164,15 @@ __TLS_CONFIG__
             proxy_pass http://openresty_lb_backend;
 
             header_filter_by_lua_block {
-                require("sticky_learn").learn_from_response()
+                -- 捕获上游 Set-Cookie 到 ctx（log 阶段不可访问 resp headers）
+                local sc = ngx.resp.get_headers()["Set-Cookie"]
+                if sc then
+                    if type(sc) == "string" then
+                        ngx.ctx.sticky_cookies = {sc}
+                    else
+                        ngx.ctx.sticky_cookies = sc
+                    end
+                end
             }
 
             log_by_lua_block {
@@ -164,7 +181,8 @@ __TLS_CONFIG__
                 if ngx.status >= 500 then
                     metrics:incr("errors", 1, 0)
                 end
-                local upstream_id = ngx.ctx.selected_upstream
+                -- balancer_by_lua 的 ctx 和 log ctx 不共享，用 shared dict 传递
+                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("last_upstream")
                 if upstream_id then
                     metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
                     -- 记录响应时间和状态码（histogram）
@@ -172,6 +190,8 @@ __TLS_CONFIG__
                     require("metrics").record_request(upstream_id, ngx.status, duration)
                 end
                 require("balancer").on_request_done()
+                -- sticky learn: 在 log 阶段学习上游 Set-Cookie（log 阶段有 socket API）
+                require("sticky_learn").learn_from_response()
             }
         }
     }

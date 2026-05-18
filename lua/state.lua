@@ -117,7 +117,7 @@ function _M.save()
     f:close()
 end
 
--- 启动时加载 + 启动定时 flush（每 60s）
+-- 启动时加载 + 启动定时 flush（每 60s）+ Redis 轮询
 function _M.start()
     local ok, err = pcall(_M.load)
     if not ok then
@@ -130,6 +130,9 @@ function _M.start()
     if timer_err then
         ngx.log(ngx.ERR, "state: failed to start timer: ", timer_err)
     end
+
+    -- Redis 跨节点同步：每 10s 检查 upstreams 变更
+    require("redis_sync").start_poll(10)
 end
 
 return _M

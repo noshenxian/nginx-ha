@@ -369,6 +369,8 @@ function _M.balance()
     end
 
     ngx.ctx.selected_upstream = upstream.id
+    -- 同时存到 shared dict（balancer ctx 和 log ctx 不共享 ngx.ctx）
+    ngx.shared.upstream_health:set("last_upstream", upstream.id, 5)
     if refresh_cookie then
         set_cookie(upstream)
     end
