@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: openresty/openresty:jammy
+      options: --user root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test deps
+        run: |
+          apt-get update -qq && apt-get install -y -qq ss python3 curl redis-tools > /dev/null
+
+      - name: Start Redis
+        run: |
+          redis-server --daemonize yes --requirepass testpass
+          sleep 1
+          redis-cli -a testpass ping
+
+      - name: Render & validate config
+        env:
+          API_GATEWAY_SECRET: ci-test-secret
+        run: |
+          cp .env.example .env
+          sed -i 's/API_GATEWAY_SECRET=change-me/API_GATEWAY_SECRET=ci-test-secret/' .env
+          bash scripts/render_config.sh
+          bash scripts/validate_config.sh
+
+      - name: Integration tests
+        run: |
+          bash tests/test_gateway.sh

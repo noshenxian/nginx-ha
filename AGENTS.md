@@ -187,4 +187,4 @@ README 至少包含：
 - [x] **多 upstream group**：扩展为 `BACKEND_UPSTREAMS_app`、`BACKEND_UPSTREAMS_api`，location 级别通过 `set $upstream_group app;` 切换
 - [x] **限流集成**：`access_by_lua` 加 `lua-resty-limit-conn` / `lua-resty-limit-req`，配合 KeyVal 动态更新白名单/黑名单/限速额度
 - [x] **可观测性增强**：`$upstream_last_addr` 等效变量记入 access log；`/metrics` 加 p50/p90/p99 latency；健康状态变更事件结构化日志
-- [ ] **CI + 压测**：GitHub Actions 跑 `render + validate + test_gateway.sh`；`wrk`/`vegeta` 压测脚本验证 least_conn / max_conns / slow_start
+- [x] **CI + 压测**：GitHub Actions 跑 `render + validate + test_gateway.sh`；`wrk`/`vegeta` 压测脚本验证 least_conn / max_conns / slow_start
