@@ -150,6 +150,10 @@ __TLS_CONFIG__
                 require("request_id").ensure()
             }
 
+            access_by_lua_block {
+                require("ratelimit").check()
+            }
+
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
