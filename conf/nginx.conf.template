@@ -84,6 +84,7 @@ http {
         listen __GATEWAY_LISTEN__;
 __TLS_CONFIG__
         set $gateway_request_id "";
+        set $upstream_group "";
         more_set_headers "Server: KP-HA";
 
         location = /healthz {

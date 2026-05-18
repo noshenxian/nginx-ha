@@ -82,11 +82,21 @@ local function ketama_pick(continuum, key)
 end
 
 local function parse_upstreams()
-    local raw = getenv("BACKEND_UPSTREAMS", "")
-    if raw == "" then
-        raw = getenv("BACKEND_UPSTREAM", "")
+    -- 支持多 upstream group：通过 $upstream_group 变量选择组名
+    local group = ngx.var.upstream_group or ""
+    local env_name = "BACKEND_UPSTREAMS"
+    if group ~= "" then
+        env_name = "BACKEND_UPSTREAMS_" .. group
     end
-    local cache_key = raw
+    local raw = getenv(env_name, "")
+    if raw == "" then
+        -- fallback to default
+        raw = getenv("BACKEND_UPSTREAMS", "")
+        if raw == "" then
+            raw = getenv("BACKEND_UPSTREAM", "")
+        end
+    end
+    local cache_key = env_name .. "|" .. raw
 
     local upstreams = {}
     for item in raw:gmatch("[^,]+") do
