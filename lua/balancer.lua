@@ -140,6 +140,25 @@ function _M.is_healthy(upstream)
     if not bool_env("HEALTH_CHECK_ENABLED", true) then
         return true
     end
+
+    -- Circuit breaker 检查
+    if bool_env("CIRCUIT_BREAKER_ENABLED", false) then
+        local dict = ngx.shared.upstream_health
+        local circuit_state = dict.get(dict, "circuit:" .. upstream.id)
+        if circuit_state == "open" then
+            local cb_timeout = tonumber(getenv("CIRCUIT_BREAKER_TIMEOUT", "30")) or 30
+            local opened_at = dict.get(dict, "circuit_time:" .. upstream.id) or 0
+            if ngx.now() - opened_at < cb_timeout then
+                return false
+            end
+            -- 超时 → 半开，放行一个探测请求
+            dict:set("circuit:" .. upstream.id, "half_open")
+        elseif circuit_state == "half_open" then
+            -- 半开状态：只放行一个请求探测
+            dict:set("circuit:" .. upstream.id, "open") -- 默认假设探测失败
+        end
+    end
+
     local state = ngx.shared.upstream_health.get(ngx.shared.upstream_health, health_key(upstream))
     return state == nil or state == "healthy"
 end

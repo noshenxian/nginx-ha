@@ -183,7 +183,7 @@ README 至少包含：
 
 - [x] **queue 排队替代直接 503**：`UPSTREAM_QUEUE_SIZE` + `UPSTREAM_QUEUE_TIMEOUT`，用 `ngx.semaphore` + timer 实现等待队列，max_conns 满时排队而非立即拒绝
 - [x] **gRPC / TCP 主动健康检查**：`healthcheck.lua` 扩展 `check_one`，支持 gRPC `Health/Check` 协议和裸 TCP connect
-- [ ] **Circuit breaker 熔断**：连续失败达到阈值后短路一段时间，指数退避恢复探测，保护上游防雪崩
+- [x] **Circuit breaker 熔断**：连续失败达到阈值后短路一段时间，指数退避恢复探测，保护上游防雪崩
 - [ ] **多 upstream group**：扩展为 `BACKEND_UPSTREAMS_app`、`BACKEND_UPSTREAMS_api`，location 级别通过变量切换 upstream 组
 - [ ] **限流集成**：`access_by_lua` 加 `lua-resty-limit-conn` / `lua-resty-limit-req`，配合 KeyVal 动态更新白名单/黑名单/限速额度
 - [ ] **可观测性增强**：`$upstream_last_addr` 等效变量记入 access log；`/metrics` 加 p50/p90/p99 latency；健康状态变更事件结构化日志

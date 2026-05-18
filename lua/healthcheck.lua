@@ -392,6 +392,26 @@ local function mark(upstream, ok)
         dict:set(health_key_name, "unhealthy")
     end
 
+    -- Circuit breaker: 断路时更新失败计数和断路时间
+    local cb_enabled = bool_env("CIRCUIT_BREAKER_ENABLED", false)
+    if cb_enabled then
+        if not ok then
+            local cb_fails = dict:incr(key("cb_fail", upstream), 1, 0)
+            local cb_threshold = tonumber(getenv("CIRCUIT_BREAKER_FAILS", "5")) or 5
+            if cb_fails >= cb_threshold then
+                dict:set(key("circuit", upstream), "open")
+                dict:set(key("circuit_time", upstream), ngx.now())
+            end
+        else
+            dict:set(key("cb_fail", upstream), 0)
+            local circuit = dict:get(key("circuit", upstream))
+            if circuit == "half_open" then
+                -- 探测成功，闭合断路
+                dict:set(key("circuit", upstream), "closed")
+            end
+        end
+    end
+
     if ok then
         dict:incr(key("pass", upstream), 1, 0)
         dict:set(key("fail", upstream), 0)
@@ -489,8 +509,28 @@ local function run(premature)
     end
 
     local cfg = get_match_config()
+    local cb_enabled = bool_env("CIRCUIT_BREAKER_ENABLED", false)
+    local cb_timeout = tonumber(getenv("CIRCUIT_BREAKER_TIMEOUT", "30")) or 30
+    local now = ngx.now()
+
     for _, upstream in ipairs(parse_upstreams()) do
-        mark(upstream, check_one(upstream, cfg))
+        -- Circuit breaker 断路跳过检查
+        local skip = false
+        if cb_enabled then
+            local circuit = ngx.shared.upstream_health:get(key("circuit", upstream))
+            if circuit == "open" then
+                local opened_at = ngx.shared.upstream_health:get(key("circuit_time", upstream)) or 0
+                if now - opened_at < cb_timeout then
+                    skip = true
+                else
+                    -- 超时后半开，放行检查
+                    ngx.shared.upstream_health:set(key("circuit", upstream), "half_open")
+                end
+            end
+        end
+        if not skip then
+            mark(upstream, check_one(upstream, cfg))
+        end
     end
 
     ngx.timer.at(parse_duration(getenv("HEALTH_CHECK_INTERVAL", "5s"), 5), run)
