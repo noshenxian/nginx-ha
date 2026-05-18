@@ -6,6 +6,9 @@ local upstream_cache = nil
 local upstream_cache_key = nil
 local runtime_config = require("runtime_config")
 
+-- 每 upstream 的排队信号量（key = upstream.id）
+local queue_semaphores = {}
+
 local function getenv(name, default)
     local value = runtime_config[name] or os.getenv(name)
     if value == nil or value == "" then
@@ -357,14 +360,35 @@ function _M.balance()
         return ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
     end
 
-    -- max_conns 检查：超过上限立即 503（P1.7）
+    -- max_conns + queue 检查
     local max_conns = tonumber(getenv("UPSTREAM_MAX_CONNS", "0")) or 0
     if max_conns > 0 then
         local inflight = ngx.shared.upstream_inflight.get(ngx.shared.upstream_inflight, "inflight:" .. upstream.id) or 0
         if inflight >= max_conns then
-            ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
-            ngx.say("upstream saturated")
-            return ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+            local queue_size = tonumber(getenv("UPSTREAM_QUEUE_SIZE", "0")) or 0
+            if queue_size <= 0 then
+                ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                ngx.say("upstream saturated")
+                return ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+            end
+
+            -- 排队：获取或创建信号量
+            local sem = queue_semaphores[upstream.id]
+            if not sem then
+                sem = ngx.semaphore.new(queue_size)
+                queue_semaphores[upstream.id] = sem
+            end
+
+            local queue_timeout = tonumber(getenv("UPSTREAM_QUEUE_TIMEOUT", "30")) or 30
+            local acquired, sem_err = sem:wait(queue_timeout)
+            if not acquired then
+                ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                ngx.say("upstream saturated (queue timeout)")
+                return ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+            end
+
+            -- 标记需要释放信号量
+            ngx.ctx.queue_sem = sem
         end
     end
 
@@ -392,6 +416,13 @@ function _M.balance()
 end
 
 function _M.on_request_done()
+    -- 释放排队信号量
+    local sem = ngx.ctx.queue_sem
+    if sem then
+        sem:post()
+        ngx.ctx.queue_sem = nil
+    end
+
     local upstream_id = ngx.ctx.selected_upstream
     if upstream_id then
         ngx.ctx.selected_upstream = nil
