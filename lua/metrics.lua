@@ -9,8 +9,17 @@ local function getenv(name, default)
     return value
 end
 
-local function parse_upstreams()
-    local raw = getenv("BACKEND_UPSTREAMS", "")
+local function parse_upstreams(group)
+    -- 支持指定 group：BACKEND_UPSTREAMS_<group> 或默认 BACKEND_UPSTREAMS
+    local env_name = "BACKEND_UPSTREAMS"
+    if group and group ~= "" then
+        env_name = "BACKEND_UPSTREAMS_" .. group
+    end
+    local raw = getenv(env_name, "")
+    if raw == "" and group and group ~= "" then
+        -- 指定 group 但没配置，回退默认
+        raw = getenv("BACKEND_UPSTREAMS", "")
+    end
     if raw == "" then
         raw = getenv("BACKEND_UPSTREAM", "")
     end
@@ -88,38 +97,127 @@ local function approx_p50(ns, hist_key_prefix, req_count)
     return prev
 end
 
-function _M.status()
-    local parts = {'{"upstreams":['}
-    local upstreams = parse_upstreams()
+-- 发现所有 upstream group（从 env 中匹配 BACKEND_UPSTREAMS_*）
+local function discover_groups()
+    local groups = {[""] = true}  -- 默认组
+    -- 检查 runtime_config 中的 key
+    local config = require("runtime_config")
+    for k, v in pairs(config) do
+        local g = k:match("^BACKEND_UPSTREAMS_(.+)$")
+        if g and v ~= "" then
+            groups[g] = true
+        end
+    end
+    -- 也检查 os.getenv
+    local i = 0
+    while true do
+        i = i + 1
+        local k = os.getenv(i)
+        if not k then break end
+        local g = k:match("^BACKEND_UPSTREAMS_(.+)$")
+        if g then
+            local v = os.getenv(k)
+            if v and v ~= "" then
+                groups[g] = true
+            end
+        end
+    end
+    return groups
+end
+
+-- 构建一个 group 的上游数据
+local function build_group_data(group_name)
+    local upstreams = parse_upstreams(group_name)
     local ns_metrics = ngx.shared.upstream_metrics
     local ns_health = ngx.shared.upstream_health
     local ns_inflight = ngx.shared.upstream_inflight
 
-    for i, upstream in ipairs(upstreams) do
-        if i > 1 then
-            parts[#parts + 1] = ","
-        end
+    local result = {}
+    for _, upstream in ipairs(upstreams) do
         local id = upstream.id
         local inflight = ns_inflight and ns_inflight.get(ns_inflight, "inflight:" .. id) or 0
         local circuit = ns_health and ns_health.get(ns_health, "circuit:" .. id) or "closed"
         local p50 = approx_p50(ns_metrics, "hist:" .. id .. ":", upstream.requests)
         local errors = ns_metrics.get(ns_metrics, "upstream_errors:" .. id) or 0
+        result[#result + 1] = {
+            id = id,
+            host = upstream.host,
+            port = upstream.port,
+            weight = upstream.weight,
+            health = upstream.health,
+            circuit = circuit,
+            inflight = tonumber(inflight),
+            requests = upstream.requests,
+            errors = errors,
+            p50_ms = string.format("%.2f", p50 * 1000),
+        }
+    end
+    return result
+end
 
+local function json_string(value)
+    value = tostring(value or "")
+    value = value:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n")
+    return '"' .. value .. '"'
+end
+
+-- 将上游对象数组转为 JSON
+local function upstreams_json(upstreams)
+    local parts = {}
+    for i, u in ipairs(upstreams) do
+        if i > 1 then parts[#parts + 1] = "," end
         parts[#parts + 1] = "{"
-        parts[#parts + 1] = '"id":' .. json_string(id)
-        parts[#parts + 1] = ',"host":' .. json_string(upstream.host)
-        parts[#parts + 1] = ',"port":' .. upstream.port
-        parts[#parts + 1] = ',"weight":' .. upstream.weight
-        parts[#parts + 1] = ',"health":' .. json_string(upstream.health)
-        parts[#parts + 1] = ',"circuit":' .. json_string(circuit)
-        parts[#parts + 1] = ',"inflight":' .. tonumber(inflight)
-        parts[#parts + 1] = ',"requests":' .. upstream.requests
-        parts[#parts + 1] = ',"errors":' .. errors
-        parts[#parts + 1] = ',"p50_ms":' .. string.format("%.2f", p50 * 1000)
+        parts[#parts + 1] = '"id":' .. json_string(u.id)
+        parts[#parts + 1] = ',"host":' .. json_string(u.host)
+        parts[#parts + 1] = ',"port":' .. u.port
+        parts[#parts + 1] = ',"weight":' .. u.weight
+        parts[#parts + 1] = ',"health":' .. json_string(u.health)
+        parts[#parts + 1] = ',"circuit":' .. json_string(u.circuit)
+        parts[#parts + 1] = ',"inflight":' .. u.inflight
+        parts[#parts + 1] = ',"requests":' .. u.requests
+        parts[#parts + 1] = ',"errors":' .. u.errors
+        parts[#parts + 1] = ',"p50_ms":' .. json_string(u.p50_ms)
         parts[#parts + 1] = "}"
     end
-    parts[#parts + 1] = ']}'
-    parts[#parts] = '],"requests":' .. (ns_metrics:get("requests") or 0)
+    return table.concat(parts)
+end
+
+function _M.status()
+    local ns_metrics = ngx.shared.upstream_metrics
+    local req_group = ngx.req.get_uri_args()["group"] or ngx.var.arg_group
+
+    -- 指定了具体 group，只返回该组
+    if req_group and req_group ~= "" then
+        local upstreams = build_group_data(req_group)
+        local parts = {'{"group":' .. json_string(req_group) .. ',"upstreams":['}
+        parts[#parts + 1] = upstreams_json(upstreams)
+        parts[#parts + 1] = '],"requests":' .. (ns_metrics:get("requests") or 0)
+            .. ',"errors":' .. (ns_metrics:get("errors") or 0) .. "}"
+        ngx.say(table.concat(parts))
+        return
+    end
+
+    -- 返回所有 group
+    local groups = discover_groups()
+    local group_list = {}
+    for g, _ in pairs(groups) do
+        group_list[#group_list + 1] = g
+    end
+    table.sort(group_list)
+
+    local parts = {'{"groups":['}
+    local total_req = 0
+    local total_err = 0
+
+    for i, g in ipairs(group_list) do
+        if i > 1 then parts[#parts + 1] = "," end
+        local upstreams = build_group_data(g)
+        parts[#parts + 1] = '{"name":' .. json_string(g == "" and "default" or g)
+        parts[#parts + 1] = ',"upstreams":[' .. upstreams_json(upstreams) .. "]"
+        parts[#parts + 1] = "}"
+    end
+
+    parts[#parts + 1] = '],"requests":' .. (ns_metrics:get("requests") or 0)
         .. ',"errors":' .. (ns_metrics:get("errors") or 0)
         .. ',"circuit_trips":' .. (ns_metrics:get("circuit_trips") or 0)
         .. ',"rate_limit_hits":' .. (ns_metrics:get("rate_limit_hits") or 0)

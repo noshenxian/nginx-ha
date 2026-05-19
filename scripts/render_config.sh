@@ -20,6 +20,8 @@ load_env_file() {
 load_env_file "$ENV_FILE_VALUE"
 
 BACKEND_UPSTREAMS_VALUE="${BACKEND_UPSTREAMS:-${BACKEND_UPSTREAM:-}}"
+BACKEND_UPSTREAMS_APP_VALUE="${BACKEND_UPSTREAMS_app:-}"
+BACKEND_UPSTREAMS_API_VALUE="${BACKEND_UPSTREAMS_api:-}"
 [ -n "$BACKEND_UPSTREAMS_VALUE" ] || {
   echo "BACKEND_UPSTREAMS or BACKEND_UPSTREAM is required" >&2
   exit 1
@@ -102,6 +104,8 @@ lua_quote() {
   echo "return {"
   echo "  BACKEND_UPSTREAMS = \"$(lua_quote "$BACKEND_UPSTREAMS_VALUE")\","
   echo "  BACKEND_UPSTREAM = \"$(lua_quote "$BACKEND_UPSTREAMS_VALUE")\","
+  echo "  BACKEND_UPSTREAMS_app = \"$(lua_quote "$BACKEND_UPSTREAMS_APP_VALUE")\","
+  echo "  BACKEND_UPSTREAMS_api = \"$(lua_quote "$BACKEND_UPSTREAMS_API_VALUE")\","
   echo "  LB_STRATEGY = \"$(lua_quote "$LB_STRATEGY_VALUE")\","
   echo "  SLOW_START_WINDOW = \"$(lua_quote "$SLOW_START_WINDOW_VALUE")\","
   echo "  CONSISTENT_HASH_KEY = \"$(lua_quote "$CONSISTENT_HASH_KEY_VALUE")\","

@@ -96,7 +96,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
       var list = document.getElementById('upstream-list');
       list.innerHTML = '';
-      (s.upstreams||[]).forEach(function(u){
+
+      // 支持新旧两种 /status 格式
+      var allUpstreams = [];
+      if(s.groups){
+        // 新格式：按 group 分组展示
+        (s.groups||[]).forEach(function(g){
+          var label = document.createElement('div');
+          label.style.cssText = 'grid-column:1/-1;font-size:14px;color:#58a6ff;margin-top:8px;padding:8px 0;border-bottom:1px solid #21262d';
+          label.textContent = 'Group: ' + (g.name||'default');
+          list.appendChild(label);
+          (g.upstreams||[]).forEach(function(u){ allUpstreams.push(u); renderCard(u); });
+        });
+      } else if(s.upstreams){
+        // 旧格式：单组
+        (s.upstreams||[]).forEach(function(u){ renderCard(u); });
+      }
+
+      function renderCard(u){
         var healthClass = u.health==='healthy'?'healthy':'unhealthy';
         if(u.circuit==='open') healthClass='circuit-open';
         var circuitClass = u.circuit||'closed';
