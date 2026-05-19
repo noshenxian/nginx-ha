@@ -14,6 +14,7 @@ ADMIN_PID=
 SC_PID=
 REDIS_BE_PID=
 TCP_PID=
+export WORKER_PROCESSES=1
 
 mkdir -p "$TMP_DIR"
 

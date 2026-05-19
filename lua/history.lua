@@ -93,7 +93,6 @@ end
 -- 启动定时快照（init_worker 中调用）
 function _M.start()
     if not bool_env("REDIS_ENABLED", false) then
-        ngx.log(ngx.ERR, "history: REDIS_ENABLED=false, skipping")
         return
     end
     ngx.timer.every(60, function()

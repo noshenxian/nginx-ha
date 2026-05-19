@@ -1,11 +1,9 @@
-worker_processes  1;
+worker_processes  __WORKER_PROCESSES__;
 error_log logs/error.log info;
 pid logs/nginx.pid;
 
 env BACKEND_UPSTREAMS;
 env BACKEND_UPSTREAM;
-env BACKEND_UPSTREAMS_app;
-env BACKEND_UPSTREAMS_api;
 env LB_STRATEGY;
 env SESSION_STICKY;
 env SESSION_STICKY_MODE;
@@ -38,9 +36,11 @@ env REDIS_PASSWORD;
 env REDIS_DB;
 env UPSTREAM_MAX_CONNS;
 env API_GATEWAY_SECRET;
+env WORKER_PROCESSES;
+env WORKER_CONNECTIONS;
 
 events {
-    worker_connections 1024;
+    worker_connections __WORKER_CONNECTIONS__;
 }
 
 http {
@@ -96,6 +96,19 @@ __TLS_CONFIG__
         }
 
         location = /dashboard {
+            access_by_lua_block {
+                local config = require("runtime_config")
+                local expected = config.API_GATEWAY_SECRET
+                if expected and expected ~= "" then
+                    local actual = ngx.var.http_x_api_gateway_secret or ngx.var.arg_secret
+                    if actual ~= expected then
+                        ngx.status = ngx.HTTP_UNAUTHORIZED
+                        ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                        ngx.say('<html><body style="background:#0d1117;color:#f85149;font-family:sans-serif;text-align:center;padding-top:80px"><h2>鉴权失败</h2><p>请添加 ?secret=your-secret 参数访问</p></body></html>')
+                        return ngx.exit(ngx.HTTP_UNAUTHORIZED)
+                    end
+                end
+            }
             content_by_lua_block {
                 require("dashboard").serve()
             }
@@ -182,88 +195,10 @@ __TLS_CONFIG__
             }
         }
 
-        # ---- 多 upstream group 示例 ----
-        # 通过 set $upstream_group xxx 切换上游组
-        # 对应的 env: BACKEND_UPSTREAMS_app, BACKEND_UPSTREAMS_api
-        location /app/ {
-            set $upstream_group app;
-            rewrite_by_lua_block { require("request_id").ensure() }
-            access_by_lua_block { require("ratelimit").check() }
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Request-ID $gateway_request_id;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_connect_timeout __PROXY_CONNECT_TIMEOUT__;
-            proxy_read_timeout __PROXY_READ_TIMEOUT__;
-            proxy_send_timeout __PROXY_SEND_TIMEOUT__;
-            proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
-            proxy_pass http://openresty_lb_backend;
-            header_filter_by_lua_block {
-                local sc = ngx.resp.get_headers()["Set-Cookie"]
-                if sc then
-                    if type(sc) == "string" then ngx.ctx.sticky_cookies = {sc}
-                    else ngx.ctx.sticky_cookies = sc end
-                end
-            }
-            log_by_lua_block {
-                local metrics = ngx.shared.upstream_metrics
-                metrics:incr("requests", 1, 0)
-                if ngx.status >= 500 then metrics:incr("errors", 1, 0) end
-                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
-                if upstream_id then
-                    metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
-                    local duration = tonumber(ngx.var.upstream_response_time) or 0
-                    require("metrics").record_request(upstream_id, ngx.status, duration)
-                    ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
-                end
-                require("balancer").on_request_done()
-                require("sticky_learn").learn_from_response()
-            }
-        }
-
-        location /api/ {
-            set $upstream_group api;
-            rewrite_by_lua_block { require("request_id").ensure() }
-            access_by_lua_block { require("ratelimit").check() }
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Request-ID $gateway_request_id;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_connect_timeout __PROXY_CONNECT_TIMEOUT__;
-            proxy_read_timeout __PROXY_READ_TIMEOUT__;
-            proxy_send_timeout __PROXY_SEND_TIMEOUT__;
-            proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
-            proxy_pass http://openresty_lb_backend;
-            header_filter_by_lua_block {
-                local sc = ngx.resp.get_headers()["Set-Cookie"]
-                if sc then
-                    if type(sc) == "string" then ngx.ctx.sticky_cookies = {sc}
-                    else ngx.ctx.sticky_cookies = sc end
-                end
-            }
-            log_by_lua_block {
-                local metrics = ngx.shared.upstream_metrics
-                metrics:incr("requests", 1, 0)
-                if ngx.status >= 500 then metrics:incr("errors", 1, 0) end
-                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
-                if upstream_id then
-                    metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
-                    local duration = tonumber(ngx.var.upstream_response_time) or 0
-                    require("metrics").record_request(upstream_id, ngx.status, duration)
-                    ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
-                end
-                require("balancer").on_request_done()
-                require("sticky_learn").learn_from_response()
-            }
-        }
+        # 多 upstream group 用法：
+        #   1. 在 .env 中定义 BACKEND_UPSTREAMS_xxx=host:port:weight,...
+        #   2. 在需要的 location 中加一行 set $upstream_group xxx;
+        #   3. 复制下面的 location / { ... } 块，替换 upstream_group 值即可
 
         location / {
             rewrite_by_lua_block {

@@ -4,8 +4,6 @@ services:
     environment:
       GATEWAY_BIND: 0.0.0.0:8080
       BACKEND_UPSTREAMS: tomcat-a:8080:3,tomcat-b:8080:1
-      BACKEND_UPSTREAMS_app: tomcat-a:8080:5,tomcat-b:8080:1
-      BACKEND_UPSTREAMS_api: tomcat-a:8080:1,tomcat-b:8080:5
       API_GATEWAY_SECRET: change-me
       LB_STRATEGY: round_robin
       SESSION_STICKY: "true"
@@ -25,7 +23,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_HOST: "172.18.0.1"
       REDIS_PORT: "6379"
-      REDIS_PASSWORD: "Scanner@2026"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     ports:
       - "18090:8080"
     depends_on:
