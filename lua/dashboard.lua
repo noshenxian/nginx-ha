@@ -112,6 +112,13 @@ function renderGlobalChart(upstreams){
     if(keys.length<2){ svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" fill="#484f58" font-size="12">数据收集中...</text>'; return; }
 
     var vals=keys.map(function(k){return bucketMap[k]});
+    // 转为增量（每 5 分钟请求数），展示流量波峰波谷
+    var deltas=[];
+    var prev=0;
+    for(var i=0;i<keys.length;i++){ var cur=bucketMap[keys[i]]; deltas.push(Math.max(0,cur-prev)); prev=cur; }
+    keys.shift(); deltas.shift();  // 去掉第一个 baseline 点
+    vals = deltas;
+
     var max=Math.max.apply(null,vals)||1;
     var xScale=function(i){return pad.l+(i/(keys.length-1))*(W-pad.l-pad.r)};
     var yScale=function(v){return H-pad.b-((v/max)*(H-pad.t-pad.b))};
