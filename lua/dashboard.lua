@@ -9,41 +9,40 @@ local html = [=[
 <title>KP-HA Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8;padding:16px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.header h1{font-size:20px;font-weight:600}
-.header .meta{font-size:12px;color:#8b949e}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
-.stat-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:12px}
-.stat-card .label{font-size:11px;color:#8b949e;margin-bottom:2px}
-.stat-card .value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
-.upstreams h2{font-size:14px;margin-bottom:8px;color:#8b949e}
-.upstream-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
-.upstream-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px 14px}
-.upstream-card .name{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.upstream-card .name .host{color:#58a6ff}
-.upstream-card .name .weight{font-size:11px;color:#8b949e;background:#21262d;padding:1px 6px;border-radius:8px}
-.badge{display:inline-block;width:8px;height:8px;border-radius:50%}
-.badge.healthy{background:#3fb950;box-shadow:0 0 4px #3fb950}
-.badge.unhealthy{background:#f85149;box-shadow:0 0 4px #f85149}
-.badge.circuit-open{background:#d29922;box-shadow:0 0 4px #d29922}
-.metrics-row{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
-.metric-item{text-align:center}
-.metric-item .val{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
-.metric-item .lbl{font-size:10px;color:#8b949e;margin-top:1px}
-.metric-item .err{color:#f85149}
-.circuit-badge{font-size:10px;padding:1px 6px;border-radius:8px}
-.circuit-badge.closed{background:#1a3a1a;color:#3fb950}
-.circuit-badge.open{background:#3a1a1a;color:#f85149}
-.circuit-badge.half_open{background:#3a2e0e;color:#d29922}
-.group-label{grid-column:1/-1;font-size:12px;color:#58a6ff;margin-top:8px;padding:4px 0;border-bottom:1px solid #21262d;cursor:pointer;user-select:none}
-.group-label:hover{color:#79c0ff}
-.group-label::before{content:'▼ ';font-size:10px}
-.group-label.collapsed::before{content:'▶ ';font-size:10px}
-.upstream-card.hidden{display:none}
-.error-msg{grid-column:1/-1;text-align:center;padding:40px;color:#f85149;font-size:14px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;padding:16px 20px}
+.header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px}
+.header h1{font-size:18px;font-weight:600;color:#f0f6fc}
+.header .meta{font-size:11px;color:#484f58}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+.stat-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:12px 14px}
+.stat-card .lbl{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.stat-card .val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat-card .sub{font-size:11px;color:#484f58;margin-top:2px}
+.chart-section{margin-bottom:20px}
+.chart-section h2{font-size:13px;color:#8b949e;margin-bottom:8px;font-weight:500}
+.chart-box{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 16px 8px;position:relative}
+.chart-box svg{display:block;width:100%}
+.chart-legend{display:flex;gap:16px;justify-content:center;margin-top:4px;font-size:10px;color:#8b949e}
+.chart-legend span{display:flex;align-items:center;gap:4px}
+.chart-legend .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.upstream-section h2{font-size:13px;color:#8b949e;margin-bottom:8px;font-weight:500}
+.upstream-table{width:100%;border-collapse:collapse;font-size:13px}
+.upstream-table th{text-align:left;padding:6px 10px;color:#8b949e;font-weight:500;font-size:11px;border-bottom:1px solid #21262d}
+.upstream-table td{padding:8px 10px;border-bottom:1px solid #0d1117}
+.upstream-table tr{background:#161b22}
+.upstream-table tr:nth-child(even){background:#1c2128}
+.upstream-table .status{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.upstream-table .status.healthy{background:#3fb950;box-shadow:0 0 4px #3fb950}
+.upstream-table .status.unhealthy{background:#f85149;box-shadow:0 0 4px #f85149}
+.upstream-table .host{color:#58a6ff;font-weight:500}
+.upstream-table .mono{font-variant-numeric:tabular-nums}
+.upstream-table .err{color:#f85149}
+.circuit{font-size:10px;padding:1px 6px;border-radius:8px}
+.circuit.closed{background:#1a3a1a;color:#3fb950}
+.circuit.open{background:#3a1a1a;color:#f85149}
+.error-msg{text-align:center;padding:60px 20px;color:#f85149;font-size:14px}
 .error-msg a{color:#58a6ff}
-.footer{text-align:center;color:#484f58;font-size:11px;margin-top:16px}
+.footer{text-align:center;color:#21262d;font-size:10px;margin-top:16px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .loading{animation:pulse 1.5s infinite}
 </style>
@@ -54,155 +53,182 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="meta"><span id="updated">-</span> · auto-refresh 5s</div>
 </div>
 
-<div class="stats-grid">
-  <div class="stat-card"><div class="label">Total Requests</div><div class="value loading" id="total-req">-</div></div>
-  <div class="stat-card"><div class="label">Error Rate</div><div class="value loading" id="error-rate">-</div></div>
-  <div class="stat-card"><div class="label">Circuit Trips</div><div class="value loading" id="circuit-trips">0</div></div>
-  <div class="stat-card"><div class="label">Rate Limit Hits</div><div class="value loading" id="rl-hits">0</div></div>
+<div class="stats-row">
+  <div class="stat-card"><div class="lbl">Total Requests</div><div class="val loading" id="total-req">-</div></div>
+  <div class="stat-card"><div class="lbl">Error Rate</div><div class="val loading" id="error-rate">-</div></div>
+  <div class="stat-card"><div class="lbl">Est. QPS</div><div class="val loading" id="est-qps">-</div><div class="sub" id="qps-detail"></div></div>
+  <div class="stat-card"><div class="lbl">Active Upstreams</div><div class="val loading" id="active-ups">-</div></div>
+  <div class="stat-card"><div class="lbl">Circuit Trips</div><div class="val loading" id="circuit-trips">0</div></div>
+  <div class="stat-card"><div class="lbl">Rate Limit Hits</div><div class="val loading" id="rl-hits">0</div></div>
 </div>
 
-<div class="upstreams">
+<div class="chart-section">
+  <h2>Request Trend (7 days · aggregated)</h2>
+  <div class="chart-box"><svg id="global-chart" height="200"></svg></div>
+</div>
+
+<div class="upstream-section">
   <h2>Upstreams</h2>
-  <div class="upstream-grid" id="upstream-list">
-    <div class="error-msg loading">Loading...</div>
-  </div>
+  <table class="upstream-table">
+    <thead><tr><th></th><th>Host</th><th>Weight</th><th>Requests</th><th>Inflight</th><th>P50</th><th>Error%</th><th>Circuit</th></tr></thead>
+    <tbody id="upstream-tbody"></tbody>
+  </table>
 </div>
 
 <div class="footer">KP-HA Dashboard · <span id="gateway-addr"></span></div>
 
 <script>
-var secret = (location.search.match(/secret=([^&]+)/)||[])[1]||'';
-var base = location.protocol + '//' + location.host;
+var secret=(location.search.match(/secret=([^&]+)/)||[])[1]||'';
+var base=location.protocol+'//'+location.host;
 
-function fmt(n){return n!=null ? Number(n).toLocaleString() : '-'}
-function fmtMs(n){return n!=null ? Number(n).toFixed(1)+'ms' : '-'}
-function fmtPct(a,b){return b>0 ? (a/b*100).toFixed(1)+'%' : '0%'}
+function fmt(n){return n!=null?Number(n).toLocaleString():'-'}
+function fmtPct(a,b){return b>0?(a/b*100).toFixed(1)+'%':'0%'}
+function fmtMs(n){return n!=null?Number(n).toFixed(1)+'ms':'-'}
 
 function showError(msg){
-  document.getElementById('upstream-list').innerHTML = '<div class="error-msg">'+msg+'</div>';
+  document.body.innerHTML='<div class="error-msg"><h2>'+msg+'</h2></div>';
 }
 
-function renderCard(u, list, groupName){
-  var hc = u.health==='healthy'?'healthy':'unhealthy';
-  if(u.circuit==='open') hc='circuit-open';
-  var cc = u.circuit||'closed';
-  var inflight = u.inflight||0;
-  var errRate = u.requests>0 ? fmtPct(u.errors||0, u.requests) : '0%';
-  var p50 = u.p50_ms ? Number(u.p50_ms).toFixed(1)+'ms' : '-';
-  var cid = (groupName||'default')+'_'+u.id.replace(/[.:]/g,'_');
-
-  var card = document.createElement('div');
-  card.className = 'upstream-card';
-  card.innerHTML =
-    '<div class="name">'+
-      '<span class="badge '+hc+'"></span>'+
-      '<span class="host">'+u.host+':'+u.port+'</span>'+
-      '<span class="weight">weight:'+u.weight+'</span>'+
-      '<span class="circuit-badge '+cc+'">'+u.circuit+'</span>'+
-    '</div>'+
-    '<div class="metrics-row">'+
-      '<div class="metric-item"><div class="val">'+fmt(u.requests)+'</div><div class="lbl">Requests</div></div>'+
-      '<div class="metric-item"><div class="val">'+inflight+'</div><div class="lbl">Inflight</div></div>'+
-      '<div class="metric-item"><div class="val">'+p50+'</div><div class="lbl">P50 Latency</div></div>'+
-      '<div class="metric-item"><div class="val err">'+errRate+'</div><div class="lbl">Error Rate</div></div>'+
-      '<div class="metric-item"><div class="val">'+u.health+'</div><div class="lbl">Health</div></div>'+
-      '<div class="metric-item"><div class="val">'+u.weight+'</div><div class="lbl">Weight</div></div>'+
-    '</div>'+
-    '<svg class="chart" id="chart-'+cid+'" width="100%" height="80" style="margin-top:6px;border-radius:4px;background:#0d1117"></svg>';
-  list.appendChild(card);
-
-  loadChart(cid, u.host+':'+u.port);
+async function fetchJSON(url){
+  var r=await fetch(url);
+  return r.json();
 }
 
-async function loadChart(cid, upstreamId){
-  var svg = document.getElementById('chart-'+cid);
-  if(!svg) return;
-  try{
-    var r = await fetch(base+'/status/history?secret='+secret+'&upstream='+encodeURIComponent(upstreamId)+'&range=3600');
-    var pts = await r.json();
-    if(!pts||pts.length<2){ svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" fill="#484f58" font-size="10">等待数据...</text>'; return; }
+function renderGlobalChart(upstreams){
+  var svg=document.getElementById('global-chart');
+  var W=svg.clientWidth||800, H=190, pad={t:16,r:12,b:24,l:50};
+  var colors=['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#79c0ff'];
 
-    var vals = pts.map(function(p){return p[1]});
-    var max = Math.max.apply(null,vals)||1;
-    var min = Math.min.apply(null,vals);
-    var w = svg.clientWidth||240;
-    var h = 78;
-    var pad = 2;
-    var xs = pts.map(function(_,i){return (i/(pts.length-1))*(w-pad*2)+pad});
-    var ys = vals.map(function(v){return h-pad-((v-min)/(max-min||1))*(h-pad*2)});
+  // 聚合所有 upstream 历史数据
+  Promise.all(upstreams.map(function(u){
+    return fetchJSON(base+'/status/history?secret='+secret+'&upstream='+encodeURIComponent(u.host+':'+u.port)+'&range=604800');
+  })).then(function(allSeries){
+    // 合并 bucket → 总和
+    var bucketMap={};
+    allSeries.forEach(function(pts){
+      (pts||[]).forEach(function(p){ bucketMap[p[0]]=(bucketMap[p[0]]||0)+p[1]; });
+    });
+    var keys=Object.keys(bucketMap).map(Number).sort(function(a,b){return a-b});
+    if(keys.length<2){ svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" fill="#484f58" font-size="12">数据收集中...</text>'; return; }
 
-    var points = '';
-    for(var i=0;i<xs.length;i++) points += xs[i].toFixed(1)+','+ys[i].toFixed(1)+' ';
+    var vals=keys.map(function(k){return bucketMap[k]});
+    var max=Math.max.apply(null,vals)||1;
+    var xScale=function(i){return pad.l+(i/(keys.length-1))*(W-pad.l-pad.r)};
+    var yScale=function(v){return H-pad.b-((v/max)*(H-pad.t-pad.b))};
 
-    var d='';
-    for(var i=0;i<xs.length;i++) d += (i===0?'M':'L')+xs[i].toFixed(1)+' '+ys[i].toFixed(1);
+    // Y轴刻度
+    var yTicks=[0,max/2,max];
+    var html='';
+    yTicks.forEach(function(t){
+      var y=yScale(t);
+      html+='<line x1="'+pad.l+'" y1="'+y+'" x2="'+(W-pad.r)+'" y2="'+y+'" stroke="#21262d" stroke-width="1"/>';
+      html+='<text x="'+(pad.l-6)+'" y="'+(y+4)+'" text-anchor="end" fill="#484f58" font-size="10">'+fmt(t)+'</text>';
+    });
 
-    svg.innerHTML =
-      '<defs><linearGradient id="g-'+cid+'" x1="0" y1="0" x2="0" y2="1">'+
-        '<stop offset="0%" stop-color="#58a6ff" stop-opacity="0.3"/>'+
-        '<stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>'+
-      '</linearGradient></defs>'+
-      '<polyline points="'+points+'" fill="none" stroke="#58a6ff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>'+
-      '<path d="'+d+' L'+(w-pad)+' '+(h-pad)+' L'+pad+' '+(h-pad)+' Z" fill="url(#g-'+cid+')"/>'+
-      '<text x="'+(w-pad)+'" y="10" text-anchor="end" fill="#8b949e" font-size="9">'+fmt(vals[vals.length-1])+'</text>';
-  }catch(e){}
+    // X轴时间标签
+    var now=Date.now()/1000;
+    for(var i=0;i<keys.length;i+=Math.max(1,Math.floor(keys.length/6))){
+      var d=new Date(keys[i]*1000);
+      var label=d.getHours()+':'+('0'+d.getMinutes()).slice(-2);
+      html+='<text x="'+xScale(i)+'" y="'+(H-6)+'" text-anchor="middle" fill="#484f58" font-size="9">'+label+'</text>';
+    }
+
+    // 折线+面积
+    var line='', area='';
+    for(var i=0;i<keys.length;i++){
+      var cx=xScale(i), cy=yScale(vals[i]);
+      line+=(i?'L':'M')+cx.toFixed(1)+' '+cy.toFixed(1);
+    }
+    area=line+' L'+(xScale(keys.length-1)).toFixed(1)+' '+(H-pad.b)+' L'+pad.l+' '+(H-pad.b)+' Z';
+
+    html+='<defs><linearGradient id="g-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#58a6ff" stop-opacity="0.25"/><stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/></linearGradient></defs>';
+    html+='<path d="'+area+'" fill="url(#g-area)"/>';
+    html+='<path d="'+line+'" fill="none" stroke="#58a6ff" stroke-width="2"/>';
+
+    // 最新值标签
+    var lastV=vals[vals.length-1], lastX=xScale(vals.length-1), lastY=yScale(lastV);
+    html+='<circle cx="'+lastX.toFixed(1)+'" cy="'+lastY.toFixed(1)+'" r="3" fill="#58a6ff"/>';
+    html+='<text x="'+(lastX-4)+'" y="'+(lastY-8)+'" text-anchor="end" fill="#f0f6fc" font-size="11" font-weight="600">'+fmt(lastV)+'</text>';
+
+    svg.innerHTML=html;
+  });
 }
 
 async function load(){
-  if(!secret){
-    showError('请添加 ?secret=xxx 参数<br><br>示例: <a style="color:#58a6ff" href="'+base+'/dashboard?secret=change-me">'+base+'/dashboard?secret=change-me</a>');
-    return;
-  }
+  if(!secret){showError('请添加 ?secret=xxx<br><br><a style="color:#58a6ff" href="'+base+'/dashboard?secret=change-me">'+base+'/dashboard?secret=change-me</a>');return}
   try{
-    var sRes = await fetch(base+'/status?secret='+secret);
-    var s = await sRes.json();
-    if(s.error){showError('鉴权失败，请检查 secret 参数');return;}
+    var s=await fetchJSON(base+'/status?secret='+secret);
+    if(s.error){showError('鉴权失败，请检查 secret 参数');return}
 
-    document.getElementById('total-req').textContent = fmt(s.requests);
-    document.getElementById('error-rate').textContent = fmtPct(s.errors, s.requests);
-    document.getElementById('circuit-trips').textContent = fmt(s.circuit_trips||0);
-    document.getElementById('rl-hits').textContent = fmt(s.rate_limit_hits||0);
-    document.getElementById('gateway-addr').textContent = base;
-    document.getElementById('updated').textContent = new Date().toLocaleTimeString();
-    var els = document.querySelectorAll('.loading');
-    for(var i=0;i<els.length;i++) els[i].classList.remove('loading');
+    var allUpstreams=[];
+    (s.groups||[{upstreams:s.upstreams||[]}]).forEach(function(g){
+      (g.upstreams||[]).forEach(function(u){ allUpstreams.push(u); });
+    });
 
-    var list = document.getElementById('upstream-list');
-    list.innerHTML = '';
+    var totalReq=s.requests||0, totalErr=s.errors||0;
+    var activeCount=allUpstreams.filter(function(u){return u.health==='healthy'}).length;
 
-    if(s.groups){
-      for(var gi=0;gi<s.groups.length;gi++){
-        var g = s.groups[gi];
-        var label = document.createElement('div');
-        label.className = 'group-label';
-        label.textContent = ' ' + (g.name||'default') + ' (' + (g.upstreams||[]).length + ')';
-        label.onclick = function(){
-          this.classList.toggle('collapsed');
-          var nxt = this.nextElementSibling;
-          while(nxt && !nxt.classList.contains('group-label')){
-            nxt.classList.toggle('hidden');
-            nxt = nxt.nextElementSibling;
-          }
-        };
-        list.appendChild(label);
-        var ups = g.upstreams||[];
-        for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list, g.name||'default');
+    document.getElementById('total-req').textContent=fmt(totalReq);
+    document.getElementById('error-rate').textContent=fmtPct(totalErr,totalReq);
+    document.getElementById('active-ups').textContent=activeCount+'/'+allUpstreams.length;
+    document.getElementById('circuit-trips').textContent=fmt(s.circuit_trips||0);
+    document.getElementById('rl-hits').textContent=fmt(s.rate_limit_hits||0);
+    document.getElementById('gateway-addr').textContent=base;
+    document.getElementById('updated').textContent=new Date().toLocaleTimeString();
+    document.querySelectorAll('.loading').forEach(function(el){el.classList.remove('loading')});
+
+    // QPS 估算（从全局趋势中取最近两个点计算 delta）
+    var uniqueUpstreams=[];
+    var seen={};
+    allUpstreams.forEach(function(u){ var key=u.host+':'+u.port; if(!seen[key]){seen[key]=1;uniqueUpstreams.push(u);} });
+
+    // 聚合趋势图
+    renderGlobalChart(uniqueUpstreams);
+
+    // 计算 QPS
+    Promise.all(uniqueUpstreams.map(function(u){
+      return fetchJSON(base+'/status/history?secret='+secret+'&upstream='+encodeURIComponent(u.host+':'+u.port)+'&range=604800');
+    })).then(function(allSeries){
+      var bucketMap={};
+      allSeries.forEach(function(pts){
+        (pts||[]).forEach(function(p){ bucketMap[p[0]]=(bucketMap[p[0]]||0)+p[1]; });
+      });
+      var keys=Object.keys(bucketMap).map(Number).sort(function(a,b){return a-b});
+      if(keys.length>=2){
+        var lastTotal=bucketMap[keys[keys.length-1]];
+        var prevTotal=bucketMap[keys[keys.length-2]];
+        var delta=lastTotal-prevTotal;
+        var interval=keys[keys.length-1]-keys[keys.length-2];
+        var qps=interval>0?Math.round(delta/interval):0;
+        document.getElementById('est-qps').textContent=fmt(qps);
+        document.getElementById('qps-detail').textContent='近5分钟均值';
       }
-    } else if(s.upstreams){
-      var ups = s.upstreams||[];
-      for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list, '');
-    }
+    });
 
-    if(list.children.length === 0){
-      showError('没有上游数据');
-    }
-  }catch(e){
-    showError('加载失败: '+e.message);
-  }
+    // 上游表格
+    var tbody=document.getElementById('upstream-tbody');
+    tbody.innerHTML='';
+    allUpstreams.forEach(function(u){
+      var hc=u.health==='healthy'?'healthy':'unhealthy';
+      var cc=u.circuit||'closed';
+      var tr=document.createElement('tr');
+      tr.innerHTML=
+        '<td><span class="status '+hc+'"></span></td>'+
+        '<td><span class="host">'+u.host+':'+u.port+'</span></td>'+
+        '<td class="mono">'+u.weight+'</td>'+
+        '<td class="mono">'+fmt(u.requests)+'</td>'+
+        '<td class="mono">'+(u.inflight||0)+'</td>'+
+        '<td class="mono">'+fmtMs(u.p50_ms)+'</td>'+
+        '<td class="mono"><span class="'+(u.errors>0?'err':'')+'">'+fmtPct(u.errors||0,u.requests)+'</span></td>'+
+        '<td><span class="circuit '+cc+'">'+u.circuit+'</span></td>';
+      tbody.appendChild(tr);
+    });
+
+  }catch(e){showError('加载失败: '+e.message)}
 }
 
 load();
-setInterval(load, 5000);
+setInterval(load,5000);
 </script>
 </body>
 </html>
