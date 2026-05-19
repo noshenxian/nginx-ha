@@ -37,7 +37,7 @@ function _M.snapshot()
             if ok then
                 local pass = runtime_config["REDIS_PASSWORD"] or os.getenv("REDIS_PASSWORD") or ""
                 if pass ~= "" then red:auth(pass) end
-                red:incrby("nginx-ha:" .. redis_key, count)
+                red:set("nginx-ha:" .. redis_key, count)
                 red:expire("nginx-ha:" .. redis_key, 691200)
                 red:set_keepalive(1000, 5)
             end
