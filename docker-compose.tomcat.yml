@@ -3,7 +3,9 @@ services:
     build: .
     environment:
       GATEWAY_BIND: 0.0.0.0:8080
-      BACKEND_UPSTREAMS: tomcat-a:8080:1,tomcat-b:8080:1
+      BACKEND_UPSTREAMS: tomcat-a:8080:3,tomcat-b:8080:1
+      BACKEND_UPSTREAMS_app: tomcat-a:8080:5,tomcat-b:8080:1
+      BACKEND_UPSTREAMS_api: tomcat-a:8080:1,tomcat-b:8080:5
       API_GATEWAY_SECRET: change-me
       LB_STRATEGY: round_robin
       SESSION_STICKY: "true"

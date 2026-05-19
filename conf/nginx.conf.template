@@ -151,6 +151,89 @@ __TLS_CONFIG__
             }
         }
 
+        # ---- 多 upstream group 示例 ----
+        # 通过 set $upstream_group xxx 切换上游组
+        # 对应的 env: BACKEND_UPSTREAMS_app, BACKEND_UPSTREAMS_api
+        location /app/ {
+            set $upstream_group app;
+            rewrite_by_lua_block { require("request_id").ensure() }
+            access_by_lua_block { require("ratelimit").check() }
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Request-ID $gateway_request_id;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_connect_timeout __PROXY_CONNECT_TIMEOUT__;
+            proxy_read_timeout __PROXY_READ_TIMEOUT__;
+            proxy_send_timeout __PROXY_SEND_TIMEOUT__;
+            proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+            proxy_pass http://openresty_lb_backend;
+            header_filter_by_lua_block {
+                local sc = ngx.resp.get_headers()["Set-Cookie"]
+                if sc then
+                    if type(sc) == "string" then ngx.ctx.sticky_cookies = {sc}
+                    else ngx.ctx.sticky_cookies = sc end
+                end
+            }
+            log_by_lua_block {
+                local metrics = ngx.shared.upstream_metrics
+                metrics:incr("requests", 1, 0)
+                if ngx.status >= 500 then metrics:incr("errors", 1, 0) end
+                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
+                if upstream_id then
+                    metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
+                    local duration = tonumber(ngx.var.upstream_response_time) or 0
+                    require("metrics").record_request(upstream_id, ngx.status, duration)
+                    ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
+                end
+                require("balancer").on_request_done()
+                require("sticky_learn").learn_from_response()
+            }
+        }
+
+        location /api/ {
+            set $upstream_group api;
+            rewrite_by_lua_block { require("request_id").ensure() }
+            access_by_lua_block { require("ratelimit").check() }
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Request-ID $gateway_request_id;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_connect_timeout __PROXY_CONNECT_TIMEOUT__;
+            proxy_read_timeout __PROXY_READ_TIMEOUT__;
+            proxy_send_timeout __PROXY_SEND_TIMEOUT__;
+            proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+            proxy_pass http://openresty_lb_backend;
+            header_filter_by_lua_block {
+                local sc = ngx.resp.get_headers()["Set-Cookie"]
+                if sc then
+                    if type(sc) == "string" then ngx.ctx.sticky_cookies = {sc}
+                    else ngx.ctx.sticky_cookies = sc end
+                end
+            }
+            log_by_lua_block {
+                local metrics = ngx.shared.upstream_metrics
+                metrics:incr("requests", 1, 0)
+                if ngx.status >= 500 then metrics:incr("errors", 1, 0) end
+                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
+                if upstream_id then
+                    metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
+                    local duration = tonumber(ngx.var.upstream_response_time) or 0
+                    require("metrics").record_request(upstream_id, ngx.status, duration)
+                    ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
+                end
+                require("balancer").on_request_done()
+                require("sticky_learn").learn_from_response()
+            }
+        }
+
         location / {
             rewrite_by_lua_block {
                 require("request_id").ensure()
