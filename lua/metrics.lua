@@ -106,15 +106,13 @@ local function prometheus_metrics()
         lines[#lines + 1] = '# TYPE upstream_inflight gauge'
         lines[#lines + 1] = 'upstream_inflight{upstream="' .. id .. '"} ' .. inflight
 
-        -- response time histogram (从 log_by_lua 记录的桶)
+        -- response time histogram（Prometheus 累积桶：每个请求计入所有 duration <= bucket 的桶）
         local duration_buckets = {0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
         local hist_key = "hist:" .. id .. ":"
-        local cumulative = 0
         for _, bucket in ipairs(duration_buckets) do
             local count = ns:get(hist_key .. bucket) or 0
-            cumulative = cumulative + count
             lines[#lines + 1] = 'upstream_request_duration_seconds_bucket{upstream="' .. id
-                .. '",le="' .. bucket .. '"} ' .. cumulative
+                .. '",le="' .. bucket .. '"} ' .. count
         end
         lines[#lines + 1] = 'upstream_request_duration_seconds_bucket{upstream="' .. id .. '",le="+Inf"} ' .. req_count
 
