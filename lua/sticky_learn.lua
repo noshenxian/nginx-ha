@@ -25,7 +25,8 @@ function _M.learn_from_response()
         return
     end
 
-    local upstream_id = ngx.shared.upstream_health:get("last_upstream")
+    local upstream_id = ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
+        or ngx.shared.upstream_health:get("last_upstream")
     if not upstream_id then
         return
     end

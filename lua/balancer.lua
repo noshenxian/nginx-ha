@@ -4,6 +4,7 @@ local _M = {}
 local rr_index = 0
 local upstream_cache = nil
 local upstream_cache_key = nil
+local upstream_cache_time = 0
 local runtime_config = require("runtime_config")
 
 -- 每 upstream 的排队信号量（key = upstream.id）
@@ -133,11 +134,13 @@ local function parse_upstreams()
         end
     end
 
-    if cache_key == upstream_cache_key and upstream_cache then
+    -- 缓存：key 不变且距上次构建不足 1 秒则复用，避免高并发下频繁 get_keys(0)
+    if cache_key == upstream_cache_key and upstream_cache and ngx.now() - upstream_cache_time < 1 then
         return upstream_cache
     end
 
     upstream_cache_key = cache_key
+    upstream_cache_time = ngx.now()
     upstream_cache = upstreams
     return upstreams
 end
@@ -422,7 +425,13 @@ function _M.balance()
     end
 
     ngx.ctx.selected_upstream = upstream.id
-    -- 同时存到 shared dict（balancer ctx 和 log ctx 不共享 ngx.ctx）
+    -- 用 request_id 作为唯一 key 绑定（balancer ctx 和 log ctx 不共享 ngx.ctx）
+
+
+    local rid = ngx.var.gateway_request_id
+    if rid and rid ~= "" then
+        ngx.shared.upstream_health:set("req:" .. rid, upstream.id, 10)
+    end
     ngx.shared.upstream_health:set("last_upstream", upstream.id, 5)
     if refresh_cookie then
         set_cookie(upstream)
@@ -456,7 +465,6 @@ function _M.on_request_done()
         or ngx.shared.upstream_health.get(ngx.shared.upstream_health, "last_upstream")
     if upstream_id then
         ngx.ctx.selected_upstream = nil
-        ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
     end
 end
 

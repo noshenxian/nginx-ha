@@ -187,12 +187,13 @@ __TLS_CONFIG__
                     metrics:incr("errors", 1, 0)
                 end
                 -- balancer_by_lua 的 ctx 和 log ctx 不共享，用 shared dict 传递
-                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("last_upstream")
+                local upstream_id = ngx.ctx.selected_upstream or ngx.shared.upstream_health:get("req:" .. ngx.var.gateway_request_id)
                 if upstream_id then
                     metrics:incr("upstream_requests:" .. upstream_id, 1, 0)
-                    -- 记录响应时间和状态码（histogram）
                     local duration = tonumber(ngx.var.upstream_response_time) or 0
                     require("metrics").record_request(upstream_id, ngx.status, duration)
+                    -- 在拿到正确 upstream_id 的同一点递减 inflight（而非 on_request_done 中重读）
+                    ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
                 end
                 require("balancer").on_request_done()
                 -- sticky learn: 在 log 阶段学习上游 Set-Cookie（log 阶段有 socket API）
