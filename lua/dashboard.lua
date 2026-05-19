@@ -82,13 +82,14 @@ function showError(msg){
   document.getElementById('upstream-list').innerHTML = '<div class="error-msg">'+msg+'</div>';
 }
 
-function renderCard(u, list){
+function renderCard(u, list, groupName){
   var hc = u.health==='healthy'?'healthy':'unhealthy';
   if(u.circuit==='open') hc='circuit-open';
   var cc = u.circuit||'closed';
   var inflight = u.inflight||0;
   var errRate = u.requests>0 ? fmtPct(u.errors||0, u.requests) : '0%';
   var p50 = u.p50_ms ? Number(u.p50_ms).toFixed(1)+'ms' : '-';
+  var cid = (groupName||'default')+'_'+u.id.replace(/[.:]/g,'_');
 
   var card = document.createElement('div');
   card.className = 'upstream-card';
@@ -107,11 +108,10 @@ function renderCard(u, list){
       '<div class="metric-item"><div class="val">'+u.health+'</div><div class="lbl">Health</div></div>'+
       '<div class="metric-item"><div class="val">'+u.weight+'</div><div class="lbl">Weight</div></div>'+
     '</div>'+
-    '<svg class="chart" id="chart-'+u.id.replace(/[.:]/g,'_')+'" width="100%" height="80" style="margin-top:6px;border-radius:4px;background:#0d1117"></svg>';
+    '<svg class="chart" id="chart-'+cid+'" width="100%" height="80" style="margin-top:6px;border-radius:4px;background:#0d1117"></svg>';
   list.appendChild(card);
 
-  // 异步加载历史折线图
-  loadChart(u.id.replace(/[.:]/g,'_'), u.host+':'+u.port);
+  loadChart(cid, u.host+':'+u.port);
 }
 
 async function loadChart(cid, upstreamId){
@@ -186,11 +186,11 @@ async function load(){
         };
         list.appendChild(label);
         var ups = g.upstreams||[];
-        for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list);
+        for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list, g.name||'default');
       }
     } else if(s.upstreams){
       var ups = s.upstreams||[];
-      for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list);
+      for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list, '');
     }
 
     if(list.children.length === 0){
