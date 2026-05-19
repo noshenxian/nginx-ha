@@ -74,10 +74,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   function fmtPct(a,b){return b>0 ? (a/b*100).toFixed(1)+'%' : '0%'}
 
   async function load(){
+    if(!secret){
+      showError('请在 URL 后添加 ?secret=your-secret<br><br>示例: ' + base + '/dashboard?secret=change-me');
+      return
+    }
     try{
       var sRes = await fetch(base + '/status?secret=' + secret);
       var s = await sRes.json();
-      if(s.error){showError(s.error);return}
+      if(s.error){showError('鉴权失败，请检查 URL 中的 secret 参数是否正确');return}
 
       var mRes = await fetch(base + '/metrics?secret=' + secret);
       var m = await mRes.text();
