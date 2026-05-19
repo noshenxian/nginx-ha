@@ -92,6 +92,12 @@ __TLS_CONFIG__
             return 200 "ok";
         }
 
+        location = /dashboard {
+            content_by_lua_block {
+                require("dashboard").serve()
+            }
+        }
+
         location /admin/ {
             access_by_lua_block {
                 local config = require("runtime_config")
