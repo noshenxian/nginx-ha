@@ -76,6 +76,7 @@ function _M.check()
     local delay, lerr = lim:incoming(key, true)
     if not delay then
         if lerr == "rejected" then
+            ngx.shared.upstream_metrics:incr("rate_limit_hits", 1, 0)
             ngx.status = 429
             ngx.header["Retry-After"] = "1"
             ngx.say("rate limit exceeded")

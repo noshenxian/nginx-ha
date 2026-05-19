@@ -401,6 +401,7 @@ local function mark(upstream, ok)
             if cb_fails >= cb_threshold then
                 dict:set(key("circuit", upstream), "open")
                 dict:set(key("circuit_time", upstream), ngx.now())
+                ngx.shared.upstream_metrics:incr("circuit_trips", 1, 0)
             end
         else
             dict:set(key("cb_fail", upstream), 0)
