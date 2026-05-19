@@ -17,7 +17,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .stat-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px}
 .stat-card .label{font-size:12px;color:#8b949e;margin-bottom:4px}
 .stat-card .value{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
-.stat-card .unit{font-size:13px;color:#8b949e;margin-left:4px}
 .upstreams h2{font-size:16px;margin-bottom:12px;color:#8b949e}
 .upstream-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 .upstream-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px}
@@ -37,7 +36,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .circuit-badge.closed{background:#1a3a1a;color:#3fb950}
 .circuit-badge.open{background:#3a1a1a;color:#f85149}
 .circuit-badge.half_open{background:#3a2e0e;color:#d29922}
-.error-msg{text-align:center;padding:40px;color:#f85149;font-size:14px}
+.group-label{grid-column:1/-1;font-size:13px;color:#58a6ff;margin-top:12px;padding:6px 0;border-bottom:1px solid #21262d}
+.error-msg{grid-column:1/-1;text-align:center;padding:40px;color:#f85149;font-size:14px}
 .footer{text-align:center;color:#484f58;font-size:11px;margin-top:24px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .loading{animation:pulse 1.5s infinite}
@@ -49,7 +49,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="meta"><span id="updated">-</span> · auto-refresh 5s</div>
 </div>
 
-<div class="stats-grid" id="global-stats">
+<div class="stats-grid">
   <div class="stat-card"><div class="label">Total Requests</div><div class="value loading" id="total-req">-</div></div>
   <div class="stat-card"><div class="label">Error Rate</div><div class="value loading" id="error-rate">-</div></div>
   <div class="stat-card"><div class="label">Circuit Trips</div><div class="value loading" id="circuit-trips">0</div></div>
@@ -58,99 +58,100 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <div class="upstreams">
   <h2>Upstreams</h2>
-  <div class="upstream-grid" id="upstream-list"></div>
+  <div class="upstream-grid" id="upstream-list">
+    <div class="error-msg loading">Loading...</div>
+  </div>
 </div>
 
 <div class="footer">KP-HA Dashboard · <span id="gateway-addr"></span></div>
 
 <script>
-(function(){
-  var secret = location.search.match(/secret=([^&]+)/);
-  secret = secret ? secret[1] : '';
-  var base = location.protocol + '//' + location.host;
+var secret = (location.search.match(/secret=([^&]+)/)||[])[1]||'';
+var base = location.protocol + '//' + location.host;
 
-  function fmt(n){return n != null ? Number(n).toLocaleString() : '-'}
-  function fmtMs(n){return n != null ? Number(n).toFixed(1) + 'ms' : '-'}
-  function fmtPct(a,b){return b>0 ? (a/b*100).toFixed(1)+'%' : '0%'}
+function fmt(n){return n!=null ? Number(n).toLocaleString() : '-'}
+function fmtMs(n){return n!=null ? Number(n).toFixed(1)+'ms' : '-'}
+function fmtPct(a,b){return b>0 ? (a/b*100).toFixed(1)+'%' : '0%'}
 
-  async function load(){
-    if(!secret){
-      showError('请在 URL 后添加 ?secret=your-secret<br><br>示例: ' + base + '/dashboard?secret=change-me');
-      return
-    }
-    try{
-      var sRes = await fetch(base + '/status?secret=' + secret);
-      var s = await sRes.json();
-      if(s.error){showError('鉴权失败，请检查 URL 中的 secret 参数是否正确');return}
+function showError(msg){
+  document.getElementById('upstream-list').innerHTML = '<div class="error-msg">'+msg+'</div>';
+}
 
-      var mRes = await fetch(base + '/metrics?secret=' + secret);
-      var m = await mRes.text();
+function renderCard(u, list){
+  var hc = u.health==='healthy'?'healthy':'unhealthy';
+  if(u.circuit==='open') hc='circuit-open';
+  var cc = u.circuit||'closed';
+  var inflight = u.inflight||0;
+  var errRate = u.requests>0 ? fmtPct(u.errors||0, u.requests) : '0%';
+  var p50 = u.p50_ms ? Number(u.p50_ms).toFixed(1)+'ms' : '-';
 
-      document.getElementById('total-req').textContent = fmt(s.requests);
-      document.getElementById('error-rate').textContent = fmtPct(s.errors, s.requests);
-      document.getElementById('circuit-trips').textContent = fmt(s.circuit_trips||0);
-      document.getElementById('rl-hits').textContent = fmt(s.rate_limit_hits||0);
-      document.getElementById('gateway-addr').textContent = base;
-      document.getElementById('updated').textContent = new Date().toLocaleTimeString();
-      document.querySelectorAll('.loading').forEach(function(el){el.classList.remove('loading')});
+  var card = document.createElement('div');
+  card.className = 'upstream-card';
+  card.innerHTML =
+    '<div class="name">'+
+      '<span class="badge '+hc+'"></span>'+
+      '<span class="host">'+u.host+':'+u.port+'</span>'+
+      '<span class="weight">weight:'+u.weight+'</span>'+
+      '<span class="circuit-badge '+cc+'">'+u.circuit+'</span>'+
+    '</div>'+
+    '<div class="metrics-row">'+
+      '<div class="metric-item"><div class="val">'+fmt(u.requests)+'</div><div class="lbl">Requests</div></div>'+
+      '<div class="metric-item"><div class="val">'+inflight+'</div><div class="lbl">Inflight</div></div>'+
+      '<div class="metric-item"><div class="val">'+p50+'</div><div class="lbl">P50 Latency</div></div>'+
+      '<div class="metric-item"><div class="val err">'+errRate+'</div><div class="lbl">Error Rate</div></div>'+
+      '<div class="metric-item"><div class="val">'+u.health+'</div><div class="lbl">Health</div></div>'+
+      '<div class="metric-item"><div class="val">'+u.weight+'</div><div class="lbl">Weight</div></div>'+
+    '</div>';
+  list.appendChild(card);
+}
 
-      var list = document.getElementById('upstream-list');
-      list.innerHTML = '';
+async function load(){
+  if(!secret){
+    showError('请添加 ?secret=xxx 参数<br><br>示例: <a style="color:#58a6ff" href="'+base+'/dashboard?secret=change-me">'+base+'/dashboard?secret=change-me</a>');
+    return;
+  }
+  try{
+    var sRes = await fetch(base+'/status?secret='+secret);
+    var s = await sRes.json();
+    if(s.error){showError('鉴权失败，请检查 secret 参数');return;}
 
-      // 支持新旧两种 /status 格式
-      var allUpstreams = [];
-      if(s.groups){
-        // 新格式：按 group 分组展示
-        (s.groups||[]).forEach(function(g){
-          var label = document.createElement('div');
-          label.style.cssText = 'grid-column:1/-1;font-size:14px;color:#58a6ff;margin-top:8px;padding:8px 0;border-bottom:1px solid #21262d';
-          label.textContent = 'Group: ' + (g.name||'default');
-          list.appendChild(label);
-          (g.upstreams||[]).forEach(function(u){ allUpstreams.push(u); renderCard(u); });
-        });
-      } else if(s.upstreams){
-        // 旧格式：单组
-        (s.upstreams||[]).forEach(function(u){ renderCard(u); });
+    document.getElementById('total-req').textContent = fmt(s.requests);
+    document.getElementById('error-rate').textContent = fmtPct(s.errors, s.requests);
+    document.getElementById('circuit-trips').textContent = fmt(s.circuit_trips||0);
+    document.getElementById('rl-hits').textContent = fmt(s.rate_limit_hits||0);
+    document.getElementById('gateway-addr').textContent = base;
+    document.getElementById('updated').textContent = new Date().toLocaleTimeString();
+    var els = document.querySelectorAll('.loading');
+    for(var i=0;i<els.length;i++) els[i].classList.remove('loading');
+
+    var list = document.getElementById('upstream-list');
+    list.innerHTML = '';
+
+    if(s.groups){
+      for(var gi=0;gi<s.groups.length;gi++){
+        var g = s.groups[gi];
+        var label = document.createElement('div');
+        label.className = 'group-label';
+        label.textContent = 'Group: ' + (g.name||'default');
+        list.appendChild(label);
+        var ups = g.upstreams||[];
+        for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list);
       }
+    } else if(s.upstreams){
+      var ups = s.upstreams||[];
+      for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list);
+    }
 
-      function renderCard(u){
-        var healthClass = u.health==='healthy'?'healthy':'unhealthy';
-        if(u.circuit==='open') healthClass='circuit-open';
-        var circuitClass = u.circuit||'closed';
-        var inflight = u.inflight||0;
-        var errRate = u.requests>0 ? fmtPct(u.errors||0, u.requests) : '0%';
-        var p50 = u.p50_ms ? Number(u.p50_ms).toFixed(1)+'ms' : '-';
-
-        var card = document.createElement('div');
-        card.className = 'upstream-card';
-        card.innerHTML =
-          '<div class="name">' +
-            '<span class="badge '+healthClass+'"></span>' +
-            '<span class="host">'+u.host+':'+u.port+'</span>' +
-            '<span class="weight">weight:'+u.weight+'</span>' +
-            '<span class="circuit-badge '+circuitClass+'">'+u.circuit+'</span>' +
-          '</div>' +
-          '<div class="metrics-row">' +
-            '<div class="metric-item"><div class="val">'+fmt(u.requests)+'</div><div class="lbl">Requests</div></div>' +
-            '<div class="metric-item"><div class="val">'+inflight+'</div><div class="lbl">Inflight</div></div>' +
-            '<div class="metric-item"><div class="val">'+p50+'</div><div class="lbl">P50 Latency</div></div>' +
-            '<div class="metric-item"><div class="val err">'+errRate+'</div><div class="lbl">Error Rate</div></div>' +
-            '<div class="metric-item"><div class="val">'+u.health+'</div><div class="lbl">Health</div></div>' +
-            '<div class="metric-item"><div class="val">'+u.weight+'</div><div class="lbl">Weight</div></div>' +
-          '</div>';
-        list.appendChild(card);
-      });
-
-    } catch(e){ showError(e.message) }
+    if(list.children.length === 0){
+      showError('没有上游数据');
+    }
+  }catch(e){
+    showError('加载失败: '+e.message);
   }
+}
 
-  function showError(msg){
-    document.getElementById('upstream-list').innerHTML = '<div class="error-msg">'+msg+'</div>';
-  }
-
-  load();
-  setInterval(load, 5000);
-})();
+load();
+setInterval(load, 5000);
 </script>
 </body>
 </html>
