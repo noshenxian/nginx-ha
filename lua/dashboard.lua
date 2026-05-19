@@ -9,36 +9,41 @@ local html = [=[
 <title>KP-HA Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8;padding:20px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
-.header h1{font-size:22px;font-weight:600}
-.header .meta{font-size:13px;color:#8b949e}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
-.stat-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px}
-.stat-card .label{font-size:12px;color:#8b949e;margin-bottom:4px}
-.stat-card .value{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
-.upstreams h2{font-size:16px;margin-bottom:12px;color:#8b949e}
-.upstream-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
-.upstream-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px}
-.upstream-card .name{font-size:16px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f1117;color:#e1e4e8;padding:16px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.header h1{font-size:20px;font-weight:600}
+.header .meta{font-size:12px;color:#8b949e}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:16px}
+.stat-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:12px}
+.stat-card .label{font-size:11px;color:#8b949e;margin-bottom:2px}
+.stat-card .value{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.upstreams h2{font-size:14px;margin-bottom:8px;color:#8b949e}
+.upstream-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
+.upstream-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px 14px}
+.upstream-card .name{font-size:13px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .upstream-card .name .host{color:#58a6ff}
-.upstream-card .name .weight{font-size:12px;color:#8b949e;background:#21262d;padding:2px 8px;border-radius:10px}
-.badge{display:inline-block;width:10px;height:10px;border-radius:50%}
-.badge.healthy{background:#3fb950;box-shadow:0 0 6px #3fb950}
-.badge.unhealthy{background:#f85149;box-shadow:0 0 6px #f85149}
-.badge.circuit-open{background:#d29922;box-shadow:0 0 6px #d29922}
-.metrics-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.upstream-card .name .weight{font-size:11px;color:#8b949e;background:#21262d;padding:1px 6px;border-radius:8px}
+.badge{display:inline-block;width:8px;height:8px;border-radius:50%}
+.badge.healthy{background:#3fb950;box-shadow:0 0 4px #3fb950}
+.badge.unhealthy{background:#f85149;box-shadow:0 0 4px #f85149}
+.badge.circuit-open{background:#d29922;box-shadow:0 0 4px #d29922}
+.metrics-row{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
 .metric-item{text-align:center}
-.metric-item .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
-.metric-item .lbl{font-size:11px;color:#8b949e;margin-top:2px}
+.metric-item .val{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.metric-item .lbl{font-size:10px;color:#8b949e;margin-top:1px}
 .metric-item .err{color:#f85149}
-.circuit-badge{font-size:11px;padding:2px 8px;border-radius:10px}
+.circuit-badge{font-size:10px;padding:1px 6px;border-radius:8px}
 .circuit-badge.closed{background:#1a3a1a;color:#3fb950}
 .circuit-badge.open{background:#3a1a1a;color:#f85149}
 .circuit-badge.half_open{background:#3a2e0e;color:#d29922}
-.group-label{grid-column:1/-1;font-size:13px;color:#58a6ff;margin-top:12px;padding:6px 0;border-bottom:1px solid #21262d}
+.group-label{grid-column:1/-1;font-size:12px;color:#58a6ff;margin-top:8px;padding:4px 0;border-bottom:1px solid #21262d;cursor:pointer;user-select:none}
+.group-label:hover{color:#79c0ff}
+.group-label::before{content:'▼ ';font-size:10px}
+.group-label.collapsed::before{content:'▶ ';font-size:10px}
+.upstream-card.hidden{display:none}
 .error-msg{grid-column:1/-1;text-align:center;padding:40px;color:#f85149;font-size:14px}
-.footer{text-align:center;color:#484f58;font-size:11px;margin-top:24px}
+.error-msg a{color:#58a6ff}
+.footer{text-align:center;color:#484f58;font-size:11px;margin-top:16px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .loading{animation:pulse 1.5s infinite}
 </style>
@@ -132,7 +137,15 @@ async function load(){
         var g = s.groups[gi];
         var label = document.createElement('div');
         label.className = 'group-label';
-        label.textContent = 'Group: ' + (g.name||'default');
+        label.textContent = ' ' + (g.name||'default') + ' (' + (g.upstreams||[]).length + ')';
+        label.onclick = function(){
+          this.classList.toggle('collapsed');
+          var nxt = this.nextElementSibling;
+          while(nxt && !nxt.classList.contains('group-label')){
+            nxt.classList.toggle('hidden');
+            nxt = nxt.nextElementSibling;
+          }
+        };
         list.appendChild(label);
         var ups = g.upstreams||[];
         for(var ui=0;ui<ups.length;ui++) renderCard(ups[ui], list);
