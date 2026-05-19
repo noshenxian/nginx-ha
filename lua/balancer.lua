@@ -453,6 +453,7 @@ function _M.on_request_done()
     end
 
     local upstream_id = ngx.ctx.selected_upstream
+        or ngx.shared.upstream_health.get(ngx.shared.upstream_health, "last_upstream")
     if upstream_id then
         ngx.ctx.selected_upstream = nil
         ngx.shared.upstream_inflight.incr(ngx.shared.upstream_inflight, "inflight:" .. upstream_id, -1)
