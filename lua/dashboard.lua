@@ -106,8 +106,46 @@ function renderCard(u, list){
       '<div class="metric-item"><div class="val err">'+errRate+'</div><div class="lbl">Error Rate</div></div>'+
       '<div class="metric-item"><div class="val">'+u.health+'</div><div class="lbl">Health</div></div>'+
       '<div class="metric-item"><div class="val">'+u.weight+'</div><div class="lbl">Weight</div></div>'+
-    '</div>';
+    '</div>'+
+    '<svg class="chart" id="chart-'+u.id.replace(/[.:]/g,'_')+'" width="100%" height="80" style="margin-top:6px;border-radius:4px;background:#0d1117"></svg>';
   list.appendChild(card);
+
+  // 异步加载历史折线图
+  loadChart(u.id.replace(/[.:]/g,'_'), u.host+':'+u.port);
+}
+
+async function loadChart(cid, upstreamId){
+  var svg = document.getElementById('chart-'+cid);
+  if(!svg) return;
+  try{
+    var r = await fetch(base+'/status/history?secret='+secret+'&upstream='+encodeURIComponent(upstreamId)+'&range=3600');
+    var pts = await r.json();
+    if(!pts||pts.length<2){ svg.innerHTML='<text x="50%" y="50%" text-anchor="middle" fill="#484f58" font-size="10">等待数据...</text>'; return; }
+
+    var vals = pts.map(function(p){return p[1]});
+    var max = Math.max.apply(null,vals)||1;
+    var min = Math.min.apply(null,vals);
+    var w = svg.clientWidth||240;
+    var h = 78;
+    var pad = 2;
+    var xs = pts.map(function(_,i){return (i/(pts.length-1))*(w-pad*2)+pad});
+    var ys = vals.map(function(v){return h-pad-((v-min)/(max-min||1))*(h-pad*2)});
+
+    var points = '';
+    for(var i=0;i<xs.length;i++) points += xs[i].toFixed(1)+','+ys[i].toFixed(1)+' ';
+
+    var d='';
+    for(var i=0;i<xs.length;i++) d += (i===0?'M':'L')+xs[i].toFixed(1)+' '+ys[i].toFixed(1);
+
+    svg.innerHTML =
+      '<defs><linearGradient id="g-'+cid+'" x1="0" y1="0" x2="0" y2="1">'+
+        '<stop offset="0%" stop-color="#58a6ff" stop-opacity="0.3"/>'+
+        '<stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>'+
+      '</linearGradient></defs>'+
+      '<polyline points="'+points+'" fill="none" stroke="#58a6ff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>'+
+      '<path d="'+d+' L'+(w-pad)+' '+(h-pad)+' L'+pad+' '+(h-pad)+' Z" fill="url(#g-'+cid+')"/>'+
+      '<text x="'+(w-pad)+'" y="10" text-anchor="end" fill="#8b949e" font-size="9">'+fmt(vals[vals.length-1])+'</text>';
+  }catch(e){}
 }
 
 async function load(){

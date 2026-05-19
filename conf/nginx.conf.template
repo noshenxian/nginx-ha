@@ -54,6 +54,7 @@ http {
     init_worker_by_lua_block {
         require("state").start()
         require("healthcheck").start()
+        require("history").start()
     }
 
     map $http_upgrade $connection_upgrade {
@@ -133,6 +134,34 @@ __TLS_CONFIG__
             }
             content_by_lua_block {
                 require("metrics").serve()
+            }
+        }
+
+        location = /status/history {
+            access_by_lua_block {
+                local config = require("runtime_config")
+                local expected = config.API_GATEWAY_SECRET
+                if expected and expected ~= "" then
+                    local actual = ngx.var.http_x_api_gateway_secret or ngx.var.arg_secret
+                    if actual ~= expected then
+                        ngx.status = ngx.HTTP_UNAUTHORIZED
+                        ngx.say('{"error":"unauthorized"}')
+                        return ngx.exit(ngx.HTTP_UNAUTHORIZED)
+                    end
+                end
+            }
+            content_by_lua_block {
+                local upstream = ngx.req.get_uri_args()["upstream"] or ngx.var.arg_upstream
+                local range = ngx.req.get_uri_args()["range"] or ngx.var.arg_range or "3600"
+                local points = require("history").query(upstream, tonumber(range))
+                local parts = {"["}
+                for i, p in ipairs(points) do
+                    if i > 1 then parts[#parts+1] = "," end
+                    parts[#parts+1] = "[" .. (p.time or 0) .. "," .. (p.value or 0) .. "]"
+                end
+                parts[#parts+1] = "]"
+                ngx.header["Content-Type"] = "application/json"
+                ngx.say(table.concat(parts))
             }
         }
 
