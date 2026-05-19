@@ -97,7 +97,7 @@ __TLS_CONFIG__
                 local config = require("runtime_config")
                 local expected = config.API_GATEWAY_SECRET
                 if expected and expected ~= "" then
-                    local actual = ngx.var.http_x_api_gateway_secret
+                    local actual = ngx.var.http_x_api_gateway_secret or ngx.req.get_uri_args()["secret"]
                     if actual ~= expected then
                         ngx.status = ngx.HTTP_UNAUTHORIZED
                         ngx.say('{"error":"unauthorized"}')
@@ -115,7 +115,7 @@ __TLS_CONFIG__
                 local config = require("runtime_config")
                 local expected = config.API_GATEWAY_SECRET
                 if expected and expected ~= "" then
-                    local actual = ngx.var.http_x_api_gateway_secret
+                    local actual = ngx.var.http_x_api_gateway_secret or ngx.req.get_uri_args()["secret"]
                     if actual ~= expected then
                         ngx.status = ngx.HTTP_UNAUTHORIZED
                         ngx.say('{"error":"unauthorized"}')
@@ -133,7 +133,7 @@ __TLS_CONFIG__
                 local config = require("runtime_config")
                 local expected = config.API_GATEWAY_SECRET
                 if expected and expected ~= "" then
-                    local actual = ngx.var.http_x_api_gateway_secret
+                    local actual = ngx.var.http_x_api_gateway_secret or ngx.req.get_uri_args()["secret"]
                     if actual ~= expected then
                         ngx.status = ngx.HTTP_UNAUTHORIZED
                         ngx.exit(ngx.HTTP_UNAUTHORIZED)
