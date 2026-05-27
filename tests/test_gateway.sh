@@ -14,13 +14,15 @@ ADMIN_PID=
 SC_PID=
 REDIS_BE_PID=
 TCP_PID=
+CB_PID=
+RL_PID=
 export WORKER_PROCESSES=1
 
 mkdir -p "$TMP_DIR"
 
 cleanup() {
   "$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
-  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" "$REDIS_BE_PID" "$TCP_PID" 2>/dev/null || true
+  kill "$BACKEND1_PID" "$BACKEND2_PID" "$ADMIN_PID" "$SC_PID" "$REDIS_BE_PID" "$TCP_PID" "$CB_PID" "$RL_PID" 2>/dev/null || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -405,3 +407,159 @@ echo "$tcp_status" | grep -q '"health":"healthy"' || \
 kill "$TCP_PID" >/dev/null 2>&1 || true
 
 echo "tcp health check tests passed"
+
+# ---- 熔断(Circuit Breaker)验证 ----
+# 思路：单后端，启动熔断。让后端健康检查失败 → 熔断打开 → /status 显示 circuit:open
+# 恢复后端 → 等待超时 + 健康检查 → 熔断闭合
+CB_PORT=$((GATEWAY_PORT + 70))
+CB_DOWN="$TMP_DIR/cb.down"
+
+{
+  echo "BACKEND_UPSTREAMS=127.0.0.1:$CB_PORT:1"
+  echo "GATEWAY_BIND=127.0.0.1:$GATEWAY_PORT"
+  echo "API_GATEWAY_SECRET=$SECRET"
+  echo "CIRCUIT_BREAKER_ENABLED=true"
+  echo "CIRCUIT_BREAKER_FAILS=2"
+  echo "CIRCUIT_BREAKER_TIMEOUT=3"
+  echo "HEALTH_CHECK_INTERVAL=1s"
+  echo "HEALTH_CHECK_FAILS=1"
+  echo "HEALTH_CHECK_PASSES=1"
+  echo "HEALTH_CHECK_TIMEOUT=500ms"
+} > "$TMP_DIR/cb.env"
+
+# 启动后端（初始健康）
+PORT="$CB_PORT" BACKEND_ID="cb-backend" \
+  python3 "$ROOT/tests/fixtures/backend.py" &
+CB_PID=$!
+wait_for_http "http://127.0.0.1:$CB_PORT/healthz"
+
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
+wait_for_port_free "$GATEWAY_PORT"
+ENV_FILE="$TMP_DIR/cb.env" sh "$ROOT/scripts/render_config.sh"
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf"
+wait_for_http "http://127.0.0.1:$GATEWAY_PORT/healthz"
+sleep 2
+
+# 验证初始状态：健康且 circuit closed
+cb_status=$(curl -sS -H "X-API-Gateway-Secret: $SECRET" "http://127.0.0.1:$GATEWAY_PORT/status")
+echo "$cb_status" | grep -q '"circuit":"closed"' || \
+  fail "cb: expected circuit closed initially, got: $(echo $cb_status | grep -o '"circuit":"[^"]*"')"
+
+# 让后端不健康 → 健康检查失败 → 熔断打开
+kill "$CB_PID" >/dev/null 2>&1 || true
+sleep 4
+
+# 验证熔断已打开
+sleep 1
+cb_status2=$(curl -sS -H "X-API-Gateway-Secret: $SECRET" "http://127.0.0.1:$GATEWAY_PORT/status")
+echo "CB status after kill: $(echo $cb_status2 | grep -o '"circuit":"[^"]*"')"
+echo "$cb_status2" | grep -q '"circuit":"open"' || \
+  fail "cb: expected circuit open after failures, got: $(echo $cb_status2 | grep -o '"circuit":"[^"]*"')"
+
+# 验证请求不会路由到熔断上游（无健康后端，应返回 503 或 502 — 都表示请求未能到达健康后端）
+cb_req=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+echo "CB request status: $cb_req"
+[ "$cb_req" = "503" ] || [ "$cb_req" = "502" ] || fail "cb: expected 502/503 when circuit open, got $cb_req"
+
+# 重启后端 → 健康检查恢复 → 熔断闭合
+PORT="$CB_PORT" BACKEND_ID="cb-backend" \
+  python3 "$ROOT/tests/fixtures/backend.py" &
+CB_PID=$!
+wait_for_http "http://127.0.0.1:$CB_PORT/healthz"
+
+# 等待熔断 timeout (3s) + 健康检查探测并恢复
+sleep 6
+
+cb_status3=$(curl -sS -H "X-API-Gateway-Secret: $SECRET" "http://127.0.0.1:$GATEWAY_PORT/status")
+echo "$cb_status3" | grep -q '"circuit":"closed"' || \
+  fail "cb: expected circuit closed after recovery, got: $(echo $cb_status3 | grep -o '"circuit":"[^"]*"')"
+
+# 验证请求恢复正常
+cb_req2=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+[ "$cb_req2" = "200" ] || fail "cb: expected 200 after recovery, got $cb_req2"
+
+echo "circuit breaker tests passed"
+
+kill "$CB_PID" >/dev/null 2>&1 || true
+
+# ---- 限流(Rate Limit)验证 ----
+# 思路：单后端，启动限流。快速连续请求超出 rate+burst → 429
+# KeyVal 白名单后 → 不再限流 → 删除白名单 → 恢复限流
+RL_PORT=$((GATEWAY_PORT + 80))
+
+{
+  echo "BACKEND_UPSTREAMS=127.0.0.1:$RL_PORT:1"
+  echo "GATEWAY_BIND=127.0.0.1:$GATEWAY_PORT"
+  echo "API_GATEWAY_SECRET=$SECRET"
+  echo "RATE_LIMIT_ENABLED=true"
+  echo "RATE_LIMIT_RATE=1r/s"
+  echo "RATE_LIMIT_BURST=0"
+  echo "HEALTH_CHECK_INTERVAL=1s"
+  echo "HEALTH_CHECK_FAILS=1"
+  echo "HEALTH_CHECK_PASSES=1"
+} > "$TMP_DIR/rl.env"
+
+PORT="$RL_PORT" BACKEND_ID="rl-backend" \
+  python3 "$ROOT/tests/fixtures/backend.py" &
+RL_PID=$!
+wait_for_http "http://127.0.0.1:$RL_PORT/healthz"
+
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf" -s stop >/dev/null 2>&1 || true
+wait_for_port_free "$GATEWAY_PORT"
+ENV_FILE="$TMP_DIR/rl.env" sh "$ROOT/scripts/render_config.sh"
+"$NGINX_BIN" -p "$ROOT" -c "$ROOT/build/nginx.conf"
+wait_for_http "http://127.0.0.1:$GATEWAY_PORT/healthz"
+sleep 2
+
+# 第一个请求应成功
+rl_first=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+[ "$rl_first" = "200" ] || fail "rl: first request should succeed, got $rl_first"
+
+# 0.2s 后发第二个请求：若 1r/s 被误解析为默认 10r/s 会被放行；正确解析时应被限流
+sleep 0.2
+rl_second=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+[ "$rl_second" = "429" ] || fail "rl: second request should be rate limited (429), got $rl_second"
+
+# 验证 metrics 中 rate_limit_hits > 0
+rl_metrics=$(curl -fsS -H "X-API-Gateway-Secret: $SECRET" "http://127.0.0.1:$GATEWAY_PORT/metrics")
+echo "$rl_metrics" | grep "^gateway_rate_limit_hits_total" | grep -q "[1-9]" || \
+  fail "rl: expected rate_limit_hits_total > 0 in metrics"
+
+# 等待限流窗口重置
+sleep 2
+
+# 加入白名单：通过 KeyVal 添加当前 IP
+rl_ip="127.0.0.1"
+rl_whitelist_resp=$(curl -sS -X PUT -H "X-API-Gateway-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"value\":\"$rl_ip\"}" \
+  "http://127.0.0.1:$GATEWAY_PORT/admin/keyval/ratelimit/whitelist/$rl_ip")
+echo "$rl_whitelist_resp" | grep -q '"message":"ok"' || \
+  fail "rl: failed to set whitelist entry, got: $rl_whitelist_resp"
+
+# 验证白名单 key 已正确存储
+rl_kv_check=$(curl -sS -H "X-API-Gateway-Secret: $SECRET" \
+  "http://127.0.0.1:$GATEWAY_PORT/admin/keyval/ratelimit/whitelist/$rl_ip")
+echo "RL-KV-GET: $rl_kv_check"
+echo "$rl_kv_check" | grep -q '"value"' || fail "rl: whitelist key not found in KeyVal: $rl_kv_check"
+
+# 白名单后快速发两个请求，都绕过限流
+rl_whitelisted=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+rl_whitelisted2=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+echo "RL whitelisted requests: $rl_whitelisted, $rl_whitelisted2"
+[ "$rl_whitelisted" = "200" ] || fail "rl: whitelisted request should succeed, got $rl_whitelisted"
+[ "$rl_whitelisted2" = "200" ] || fail "rl: whitelisted request 2 should succeed, got $rl_whitelisted2"
+
+# 删除白名单
+curl -sS -X DELETE -H "X-API-Gateway-Secret: $SECRET" \
+  "http://127.0.0.1:$GATEWAY_PORT/admin/keyval/ratelimit/whitelist/$rl_ip" >/dev/null 2>&1 || true
+
+# 白名单删除后应恢复限流
+rl_after_whitelist=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+# 注：第一个请求可能刚好通过（rate 1r/s 窗口已过），发两个确保触发限流
+rl_after_whitelist2=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$GATEWAY_PORT/app" || true)
+[ "$rl_after_whitelist2" = "429" ] || fail "rl: should be rate limited after whitelist removal, got $rl_after_whitelist2"
+
+kill "$RL_PID" >/dev/null 2>&1 || true
+
+echo "rate limit tests passed"

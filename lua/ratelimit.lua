@@ -14,25 +14,21 @@ local function bool_env(name, default)
     return value == "1" or value == "true" or value == "yes" or value == "on"
 end
 
--- 检查 KeyVal 白名单
+local function parse_rate(value, default)
+    local raw = tostring(value or "")
+    local numeric = raw:match("^%s*(%d+%.?%d*)%s*r/s%s*$") or raw:match("^%s*(%d+%.?%d*)%s*$")
+    return tonumber(numeric) or default
+end
+
+-- 检查 KeyVal 白名单（直接查找 key，避免遍历 get_keys 的限制）
 local function is_whitelisted(key)
     local dict = ngx.shared.upstream_health
     if not dict then
         return false
     end
-    local all_keys = dict:get_keys(0)
-    for _, k in ipairs(all_keys or {}) do
-        if k:sub(1, 3) == "kv:" then
-            -- 检查 ratelimit:whitelist:* 前缀
-            if k:match("^kv:ratelimit:whitelist:") then
-                local value = dict:get(k)
-                if value == key then
-                    return true
-                end
-            end
-        end
-    end
-    return false
+    local store_key = "kv:ratelimit:whitelist/" .. key
+    local stored_value = dict:get(store_key)
+    return stored_value ~= nil and stored_value == key
 end
 
 function _M.check()
@@ -40,19 +36,19 @@ function _M.check()
         return
     end
 
-    local rate = getenv("RATE_LIMIT_RATE", "10")
+    local rate = parse_rate(getenv("RATE_LIMIT_RATE", "10"), 10)
     local burst = tonumber(getenv("RATE_LIMIT_BURST", "20")) or 20
     local key_source = getenv("RATE_LIMIT_KEY", "remote_addr")
 
-    -- 提取限流 key
+    -- 提取限流 key（用 remote_addr 字符串而非 binary_remote_addr，确保与 KeyVal 白名单字符串匹配）
     local key
     if key_source == "remote_addr" then
-        key = ngx.var.binary_remote_addr or ngx.var.remote_addr
+        key = ngx.var.remote_addr
     elseif key_source == "header" then
         local hdr_name = getenv("RATE_LIMIT_HEADER", "X-API-Key")
         key = ngx.req.get_headers()[hdr_name] or ngx.var.remote_addr
     else
-        key = ngx.var.binary_remote_addr or ngx.var.remote_addr
+        key = ngx.var.remote_addr
     end
 
     if not key then
@@ -67,7 +63,7 @@ function _M.check()
     -- 使用 lua-resty-limit-req 的 shared dict（需要独立的 dict）
     local limit_req = require("resty.limit.req")
     -- 默认使用 upstream_metrics dict 存计数器
-    local lim, err = limit_req.new("upstream_metrics", {rate = rate, burst = burst})
+    local lim, err = limit_req.new("upstream_metrics", rate, burst)
     if not lim then
         ngx.log(ngx.ERR, "ratelimit: failed to create limiter: ", err)
         return
